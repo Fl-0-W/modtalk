@@ -246,7 +246,13 @@ public class Brain {
         MobTalkClient.chat(mc, "§e" + m.name() + (toName != null ? "§7 → " + toName : "") + "§f: " + text);
 
         Config c = Config.INSTANCE;
-        final String voice = c.voices.get(State.voiceIndex(m.id(), c.voices.size()));
+        List<String> vs = Api.voiceList();
+        if (vs.isEmpty()) {
+            if (reportErr)
+                MobTalkClient.chat(mc, "§c[MobTalk] Нет голосов для озвучки. Для ElevenLabs проверь ключ и добавь голоса в аккаунт.");
+            return;
+        }
+        final String voice = vs.get(State.voiceIndex(m.id(), vs.size()));
         Personalities.Profile p = Personalities.profile(m.type(), m.hostile());
         double sp = p.speed() * (0.9 + Math.floorMod(m.id().getLeastSignificantBits(), 21L) / 100.0);
         final double speed = Math.max(0.7, Math.min(1.4, sp));

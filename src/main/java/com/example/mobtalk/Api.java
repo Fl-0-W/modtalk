@@ -1,6 +1,7 @@
 package com.example.mobtalk;
 
 import com.google.gson.JsonArray;
+import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 
@@ -11,6 +12,7 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.List;
 
 /** Клиент OpenAI-совместимого API: распознавание речи, чат, озвучка. */
@@ -70,9 +72,78 @@ public class Api {
                 .getAsJsonObject("message").get("content").getAsString().trim();
     }
 
+    // ---------- ElevenLabs ----------
+
+    private static List<String> cachedEleven;
+
+    /** Список голосов для текущего провайдера озвучки. */
+    public static synchronized List<String> voiceList() {
+        Config c = Config.INSTANCE;
+        if (!"elevenlabs".equalsIgnoreCase(c.ttsProvider)) return c.voices;
+        if (!c.elevenVoices.isEmpty()) return c.elevenVoices;
+        if (cachedEleven == null || cachedEleven.isEmpty()) cachedEleven = fetchElevenVoices();
+        return cachedEleven;
+    }
+
+    private static List<String> fetchElevenVoices() {
+        Config c = Config.INSTANCE;
+        for (String url : new String[]{"https://api.elevenlabs.io/v2/voices?page_size=100",
+                "https://api.elevenlabs.io/v1/voices"}) {
+            try {
+                HttpRequest req = HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(20))
+                        .header("xi-api-key", c.elevenApiKey).GET().build();
+                HttpResponse<String> r = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+                if (r.statusCode() != 200) continue;
+                JsonArray arr = JsonParser.parseString(r.body()).getAsJsonObject().getAsJsonArray("voices");
+                List<String> mine = new ArrayList<>(), all = new ArrayList<>();
+                for (JsonElement e : arr) {
+                    JsonObject v = e.getAsJsonObject();
+                    String id = v.get("voice_id").getAsString();
+                    all.add(id);
+                    String cat = v.has("category") && !v.get("category").isJsonNull() ? v.get("category").getAsString() : "";
+                    if (!"premade".equals(cat)) mine.add(id); // свои/добавленные из библиотеки голоса приоритетнее
+                }
+                List<String> out = mine.isEmpty() ? all : mine;
+                if (!out.isEmpty()) return out;
+            } catch (Exception ignored) {
+            }
+        }
+        return new ArrayList<>();
+    }
+
+    private static byte[] ttsEleven(String text, String voiceId, double speed) throws Exception {
+        Config c = Config.INSTANCE;
+        JsonObject body = new JsonObject();
+        body.addProperty("text", text);
+        body.addProperty("model_id", c.elevenModel);
+        JsonObject vs = new JsonObject();
+        if (c.elevenModel.contains("v3")) {
+            vs.addProperty("stability", 0.5); // v3 принимает только дискретные значения
+        } else {
+            vs.addProperty("stability", c.elevenStability);
+            vs.addProperty("similarity_boost", 0.75);
+            vs.addProperty("style", c.elevenStyle);
+            vs.addProperty("use_speaker_boost", true);
+            vs.addProperty("speed", Math.max(0.8, Math.min(1.15, speed)));
+        }
+        body.add("voice_settings", vs);
+
+        HttpRequest req = HttpRequest.newBuilder(URI.create(
+                        "https://api.elevenlabs.io/v1/text-to-speech/" + voiceId + "?output_format=pcm_24000"))
+                .timeout(Duration.ofSeconds(60))
+                .header("xi-api-key", c.elevenApiKey)
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
+                .build();
+        HttpResponse<byte[]> r = HTTP.send(req, HttpResponse.BodyHandlers.ofByteArray());
+        check(r.statusCode(), new String(r.body(), StandardCharsets.UTF_8));
+        return r.body();
+    }
+
     /** Возвращает сырой PCM 24 кГц, 16 бит, моно. */
     public static byte[] tts(String text, String voice, double speed, String instructions) throws Exception {
         Config c = Config.INSTANCE;
+        if ("elevenlabs".equalsIgnoreCase(c.ttsProvider)) return ttsEleven(text, voice, speed);
         JsonObject body = new JsonObject();
         body.addProperty("model", c.ttsModel);
         body.addProperty("input", text);

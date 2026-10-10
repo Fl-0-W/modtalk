@@ -23,6 +23,15 @@ public class Config {
     public boolean jsonMode = true;
     public int configVersion = 0;
 
+    /** "openai" (по умолчанию) или "elevenlabs" — самый живой русский голос. */
+    public String ttsProvider = "openai";
+    public String elevenApiKey = "";
+    public String elevenModel = "eleven_multilingual_v2";
+    /** Оставь пустым — мод возьмёт голоса из твоего аккаунта ElevenLabs. Или впиши ID голосов. */
+    public List<String> elevenVoices = new ArrayList<>();
+    public double elevenStability = 0.4;
+    public double elevenStyle = 0.35;
+
     /** Список голосов для озвучки. Каждый моб получает свой голос из этого списка. */
     public List<String> voices = new ArrayList<>(DEFAULT_VOICES);
 
@@ -67,6 +76,11 @@ public class Config {
             String env = System.getenv("OPENAI_API_KEY");
             if (env != null) c.apiKey = env;
         }
+        if (c.elevenApiKey == null || c.elevenApiKey.isBlank()) {
+            String env = System.getenv("ELEVENLABS_API_KEY");
+            c.elevenApiKey = env != null ? env : "";
+        }
+        if (c.elevenVoices == null) c.elevenVoices = new ArrayList<>();
         if (c.baseUrl.endsWith("/")) c.baseUrl = c.baseUrl.substring(0, c.baseUrl.length() - 1);
         return c;
     }
