@@ -3,67 +3,50 @@ package com.example.mobtalk;
 import net.fabricmc.api.ClientModInitializer;
 import net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientTickEvents;
 import net.fabricmc.fabric.api.client.keybinding.v1.KeyBindingHelper;
-import net.fabricmc.fabric.api.client.networking.v1.ClientPlayConnectionEvents;
 import net.fabricmc.fabric.api.event.lifecycle.v1.ServerTickEvents;
 import net.fabricmc.fabric.api.event.player.AttackEntityCallback;
 import net.minecraft.client.MinecraftClient;
 import net.minecraft.client.option.KeyBinding;
 import net.minecraft.client.util.InputUtil;
 import net.minecraft.entity.Entity;
-import net.minecraft.entity.LivingEntity;
-import net.minecraft.entity.effect.StatusEffectInstance;
-import net.minecraft.entity.effect.StatusEffects;
 import net.minecraft.entity.mob.HostileEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
-import net.minecraft.entity.projectile.ProjectileUtil;
+import net.minecraft.item.ItemStack;
 import net.minecraft.registry.Registries;
 import net.minecraft.server.MinecraftServer;
-import net.minecraft.server.network.ServerPlayerEntity;
 import net.minecraft.server.world.ServerWorld;
 import net.minecraft.text.Text;
 import net.minecraft.util.ActionResult;
-import net.minecraft.util.hit.EntityHitResult;
 import net.minecraft.util.math.Box;
-import net.minecraft.util.math.Vec3d;
 import org.lwjgl.glfw.GLFW;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
-import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
+import java.util.*;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
+import java.util.stream.Collectors;
 
 public class MobTalkClient implements ClientModInitializer {
     public static final Logger LOG = LoggerFactory.getLogger("MobTalk");
 
-    private static final Pattern TAG = Pattern.compile("\\[(TRUCE|ANGRY|DEAL)\\]");
-    private static final double RANGE = 10.0;
+    static final ExecutorService WORK = pool(1, "MobTalk-Work");
+    static final ExecutorService AMBIENT = pool(1, "MobTalk-Ambient");
+    static final ExecutorService TTS = pool(3, "MobTalk-TTS");
+    static final ExecutorService PLAYER = pool(1, "MobTalk-Audio");
 
-    /** Мобы, заключившие перемирие (только в одиночной игре). */
-    private static final Set<UUID> TRUCE = ConcurrentHashMap.newKeySet();
-
+    private static final Random RNG = new Random();
     private static KeyBinding talkKey;
-    private static final ExecutorService WORK = single("MobTalk-Work");
-    private static final ExecutorService PLAYER = single("MobTalk-Audio");
 
     private static volatile boolean busy;
+    private static volatile boolean ambientBusy;
     private static boolean recording;
-    private static boolean locked; // ждём отпускания клавиши
+    private static boolean locked;
+    private static int chatterCountdown = 20 * 90;
 
-    private static UUID tId;
-    private static String tType;
-    private static String tName;
-    private static boolean tHostile;
-
-    private static ExecutorService single(String name) {
-        return Executors.newSingleThreadExecutor(r -> {
+    private static ExecutorService pool(int n, String name) {
+        return Executors.newFixedThreadPool(n, r -> {
             Thread t = new Thread(r, name);
             t.setDaemon(true);
             return t;
@@ -72,15 +55,16 @@ public class MobTalkClient implements ClientModInitializer {
 
     @Override
     public void onInitializeClient() {
+        Config.reload();
+        State.load();
         Memory.load();
         talkKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.mobtalk.talk", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.mobtalk"));
 
         ClientTickEvents.END_CLIENT_TICK.register(MobTalkClient::clientTick);
         ServerTickEvents.END_SERVER_TICK.register(MobTalkClient::serverTick);
-        ClientPlayConnectionEvents.DISCONNECT.register((h, c) -> TRUCE.clear());
         AttackEntityCallback.EVENT.register((player, world, hand, entity, hit) -> {
-            TRUCE.remove(entity.getUuid()); // ударил — перемирие сорвано
+            if (State.isTruce(entity.getUuid())) State.setTruce(entity.getUuid(), false); // ударил — перемирие сорвано
             return ActionResult.PASS;
         });
         LOG.info("MobTalk loaded");
@@ -90,8 +74,9 @@ public class MobTalkClient implements ClientModInitializer {
 
     private static void clientTick(MinecraftClient mc) {
         if (mc.player == null || mc.world == null) return;
-        boolean down = talkKey.isPressed();
+        ambientTick(mc);
 
+        boolean down = talkKey.isPressed();
         if (!down) {
             locked = false;
             if (recording) {
@@ -101,20 +86,16 @@ public class MobTalkClient implements ClientModInitializer {
             return;
         }
         if (recording || locked) return;
-        if (busy || mc.currentScreen != null) {
-            locked = true;
-            return;
-        }
+        locked = true;
+        if (busy || mc.currentScreen != null) return;
 
-        locked = true; // если что-то не так — не спамим, пока клавиша зажата
         Config.reload();
         if (Config.INSTANCE.apiKey == null || Config.INSTANCE.apiKey.isBlank()) {
             chat(mc, "§c[MobTalk] Впиши apiKey в файл config/mobtalk.json и повтори.");
             return;
         }
-        Entity target = findTarget(mc);
-        if (target == null) {
-            overlay(mc, "§7Наведи прицел на моба (до " + (int) RANGE + " блоков)");
+        if (nearbyMobs(mc, 1).isEmpty()) {
+            overlay(mc, "§7Рядом нет мобов (слышат в радиусе " + (int) Config.INSTANCE.listenRadius + " блоков)");
             return;
         }
         if (!Mic.start()) {
@@ -122,24 +103,7 @@ public class MobTalkClient implements ClientModInitializer {
             return;
         }
         recording = true;
-        tId = target.getUuid();
-        tType = Registries.ENTITY_TYPE.getId(target.getType()).getPath();
-        tName = target.getName().getString();
-        tHostile = target instanceof HostileEntity;
-        overlay(mc, "§a🎤 Слушаю " + tName + "… (отпусти клавишу, когда закончишь)");
-    }
-
-    private static Entity findTarget(MinecraftClient mc) {
-        Entity cam = mc.getCameraEntity();
-        if (cam == null) return null;
-        Vec3d start = cam.getCameraPosVec(1.0f);
-        Vec3d dir = cam.getRotationVec(1.0f);
-        Vec3d end = start.add(dir.multiply(RANGE));
-        Box box = cam.getBoundingBox().stretch(dir.multiply(RANGE)).expand(1.0);
-        EntityHitResult r = ProjectileUtil.raycast(cam, start, end, box,
-                e -> e instanceof LivingEntity && e.isAlive() && !(e instanceof PlayerEntity) && !e.isSpectator(),
-                RANGE * RANGE);
-        return r == null ? null : r.getEntity();
+        overlay(mc, "§a🎤 Слушаю… отпусти клавишу, когда закончишь");
     }
 
     private static void finishRecording(MinecraftClient mc) {
@@ -148,16 +112,19 @@ public class MobTalkClient implements ClientModInitializer {
             overlay(mc, "§7Слишком коротко — держи клавишу, пока говоришь");
             return;
         }
+        List<Brain.Mob> mobs = nearbyMobs(mc, Math.max(1, Config.INSTANCE.maxListeners));
+        if (mobs.isEmpty()) {
+            overlay(mc, "§7Рядом никого нет");
+            return;
+        }
+        long t = mc.world.getTimeOfDay() % 24000L;
+        Brain.Scene scene = new Brain.Scene(mobs, inventoryString(mc), t < 13000L ? "день" : "ночь",
+                mc.player.getName().getString(), mc.player.getUuid());
         busy = true;
-        final UUID id = tId;
-        final String type = tType, name = tName;
-        final boolean hostile = tHostile;
-        final UUID playerId = mc.player.getUuid();
-        final String playerName = mc.player.getName().getString();
-        overlay(mc, "§e" + name + " думает…");
+        overlay(mc, "§e" + mobs.size() + " сущ. слушают…");
         WORK.submit(() -> {
             try {
-                process(mc, id, type, name, hostile, playerId, playerName, wav);
+                Brain.playerRound(mc, scene, wav);
             } catch (Exception e) {
                 LOG.error("MobTalk error", e);
                 chat(mc, "§c[MobTalk] Ошибка: " + e.getMessage());
@@ -167,67 +134,102 @@ public class MobTalkClient implements ClientModInitializer {
         });
     }
 
-    // ---------- основная логика ----------
+    // ---------- сцена ----------
 
-    private static void process(MinecraftClient mc, UUID id, String type, String name, boolean hostile,
-                                UUID playerId, String playerName, byte[] wav) throws Exception {
-        String heard = Api.transcribe(wav);
-        if (heard.isBlank()) {
-            overlay(mc, "§7Не расслышал, повтори");
-            return;
-        }
-        chat(mc, "§7Вы: §f" + heard);
-
-        List<Memory.Msg> history = Memory.get(id);
-        history.add(new Memory.Msg("user", heard));
-        String raw = Api.chat(Personalities.systemPrompt(type, hostile, playerName, name), history);
-
-        Memory.add(id, "user", heard);
-        Memory.add(id, "assistant", raw);
-
-        String clean = TAG.matcher(raw).replaceAll("").trim();
-        chat(mc, "§e" + name + "§f: " + clean);
-
-        applyTags(mc, raw, id, type, name, playerId);
-
-        Personalities.Profile p = Personalities.profile(type, hostile);
-        byte[] pcm = Api.tts(clean, p.voice(), p.speed());
-        PLAYER.submit(() -> Mic.play(pcm));
+    private static Brain.Mob toMob(MobEntity e, MinecraftClient mc) {
+        String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
+        boolean hostile = Personalities.isHostile(type, e instanceof HostileEntity);
+        return new Brain.Mob(e.getUuid(), type, Personalities.displayName(e), hostile, e.distanceTo(mc.player));
     }
 
-    private static void applyTags(MinecraftClient mc, String raw, UUID id, String type, String name, UUID playerId) {
-        Set<String> tags = new HashSet<>();
-        Matcher m = TAG.matcher(raw);
-        while (m.find()) tags.add(m.group(1));
-        MinecraftServer srv = mc.getServer();
-        if (tags.isEmpty() || srv == null) return; // на чужих серверах эффекты недоступны
+    private static List<Brain.Mob> nearbyMobs(MinecraftClient mc, int max) {
+        double r = Config.INSTANCE.listenRadius;
+        List<MobEntity> list = mc.world.getEntitiesByClass(MobEntity.class,
+                mc.player.getBoundingBox().expand(r), e -> e.isAlive() && e.distanceTo(mc.player) <= r);
+        list.sort(Comparator.comparingDouble((MobEntity e) -> e.distanceTo(mc.player)));
+        List<Brain.Mob> out = new ArrayList<>();
+        for (MobEntity e : list) {
+            if (out.size() >= max) break;
+            out.add(toMob(e, mc));
+        }
+        return out;
+    }
 
-        srv.execute(() -> {
-            if (tags.contains("TRUCE")) {
-                TRUCE.add(id);
-                chat(mc, "§a[Перемирие: " + name + " не тронет вас, пока вы его не ударите]");
-            }
-            if (tags.contains("ANGRY") && TRUCE.remove(id)) {
-                chat(mc, "§c[Перемирие нарушено: " + name + " снова враждебен]");
-            }
-            if (tags.contains("DEAL") && type.equals("villager")) {
-                ServerPlayerEntity sp = srv.getPlayerManager().getPlayer(playerId);
-                if (sp != null) {
-                    sp.addStatusEffect(new StatusEffectInstance(StatusEffects.HERO_OF_THE_VILLAGE, 6000, 0));
-                    chat(mc, "§a[Сделка заключена: скидки у жителей на 5 минут]");
+    private static String inventoryString(MinecraftClient mc) {
+        Map<String, Integer> m = new TreeMap<>();
+        for (ItemStack s : mc.player.getInventory().main)
+            if (!s.isEmpty()) m.merge(Registries.ITEM.getId(s.getItem()).toString(), s.getCount(), Integer::sum);
+        for (ItemStack s : mc.player.getInventory().offHand)
+            if (!s.isEmpty()) m.merge(Registries.ITEM.getId(s.getItem()).toString(), s.getCount(), Integer::sum);
+        if (m.isEmpty()) return "пусто";
+        return m.entrySet().stream().limit(30).map(en -> en.getKey() + " × " + en.getValue())
+                .collect(Collectors.joining(", "));
+    }
+
+    // ---------- редкие разговоры между мобами ----------
+
+    private static void ambientTick(MinecraftClient mc) {
+        Config c = Config.INSTANCE;
+        if (!c.ambientChatter || recording || busy || ambientBusy) return;
+        if (--chatterCountdown > 0) return;
+        int base = Math.max(20, c.chatterIntervalSec) * 20;
+        chatterCountdown = base / 2 + RNG.nextInt(base);
+        if (c.apiKey == null || c.apiKey.isBlank()) return;
+
+        double r = c.chatterRadius;
+        List<MobEntity> near = mc.world.getEntitiesByClass(MobEntity.class,
+                mc.player.getBoundingBox().expand(r), e -> e.isAlive() && e.distanceTo(mc.player) <= r);
+        if (near.size() < 2) return;
+        Collections.shuffle(near, RNG);
+        for (MobEntity a : near) {
+            MobEntity best = null;
+            double bd = 6.0;
+            for (MobEntity b : near) {
+                if (b == a) continue;
+                double d = a.distanceTo(b);
+                if (d < bd) {
+                    bd = d;
+                    best = b;
                 }
             }
-        });
+            if (best != null) {
+                Brain.Mob ma = toMob(a, mc), mb = toMob(best, mc);
+                String pn = mc.player.getName().getString();
+                ambientBusy = true;
+                AMBIENT.submit(() -> {
+                    try {
+                        Brain.chatter(mc, ma, mb, pn);
+                    } catch (Exception e) {
+                        LOG.warn("Chatter error: {}", e.getMessage());
+                    } finally {
+                        ambientBusy = false;
+                    }
+                });
+                return;
+            }
+        }
     }
 
-    /** Мобы с перемирием перестают целиться в игрока. Работает на встроенном сервере (одиночная игра). */
+    // ---------- «ходит за игроком» (одиночная игра) ----------
+
     private static void serverTick(MinecraftServer server) {
-        if (TRUCE.isEmpty()) return;
-        for (UUID id : TRUCE) {
+        Deals.tick(server);
+        if (server.getTicks() % 5 != 0) return;
+        Set<UUID> follow = State.followSnapshot();
+        if (follow.isEmpty()) return;
+        for (UUID id : follow) {
             for (ServerWorld w : server.getWorlds()) {
                 Entity e = w.getEntity(id);
-                if (e instanceof MobEntity mob) {
-                    if (mob.getTarget() instanceof PlayerEntity) mob.setTarget(null);
+                if (e instanceof MobEntity mob && mob.isAlive()) {
+                    PlayerEntity p = w.getClosestPlayer(mob, 48.0);
+                    if (p == null) break;
+                    double d = mob.distanceTo(p);
+                    if (d > 3.5) {
+                        mob.getNavigation().startMovingTo(p, 1.2);
+                        mob.getLookControl().lookAt(p, 30f, 30f);
+                    } else if (d < 2.5) {
+                        mob.getNavigation().stop();
+                    }
                     break;
                 }
             }
@@ -236,13 +238,13 @@ public class MobTalkClient implements ClientModInitializer {
 
     // ---------- вывод ----------
 
-    private static void chat(MinecraftClient mc, String s) {
+    static void chat(MinecraftClient mc, String s) {
         mc.execute(() -> {
             if (mc.player != null) mc.player.sendMessage(Text.literal(s), false);
         });
     }
 
-    private static void overlay(MinecraftClient mc, String s) {
+    static void overlay(MinecraftClient mc, String s) {
         mc.execute(() -> {
             if (mc.player != null) mc.player.sendMessage(Text.literal(s), true);
         });

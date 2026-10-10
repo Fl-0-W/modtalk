@@ -6,9 +6,12 @@ import net.fabricmc.loader.api.FabricLoader;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 
 public class Config {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
+    private static final List<String> DEFAULT_VOICES = List.of("alloy", "echo", "fable", "onyx", "nova", "shimmer");
 
     public String apiKey = "";
     public String baseUrl = "https://api.openai.com/v1";
@@ -17,6 +20,20 @@ public class Config {
     public String ttsModel = "tts-1";
     public String language = "ru";
     public int maxHistory = 24;
+    public boolean jsonMode = true;
+
+    /** Список голосов для озвучки. Каждый моб получает свой голос из этого списка. */
+    public List<String> voices = new ArrayList<>(DEFAULT_VOICES);
+
+    /** Радиус, в котором мобы слышат игрока (блоков). */
+    public double listenRadius = 10.0;
+    /** Сколько ближайших мобов отвечают одновременно. */
+    public int maxListeners = 3;
+
+    /** Редкие короткие разговоры мобов между собой. */
+    public boolean ambientChatter = true;
+    public int chatterIntervalSec = 120;
+    public double chatterRadius = 14.0;
 
     public static Config INSTANCE = load();
 
@@ -31,10 +48,10 @@ public class Config {
             if (Files.exists(p)) {
                 Config read = GSON.fromJson(Files.readString(p), Config.class);
                 if (read != null) c = read;
-            } else {
-                Files.createDirectories(p.getParent());
-                Files.writeString(p, GSON.toJson(c));
             }
+            if (c.voices == null || c.voices.isEmpty()) c.voices = new ArrayList<>(DEFAULT_VOICES);
+            Files.createDirectories(p.getParent());
+            Files.writeString(p, GSON.toJson(c)); // дописывает новые поля в старый конфиг
         } catch (Exception e) {
             MobTalkClient.LOG.error("Config error", e);
         }

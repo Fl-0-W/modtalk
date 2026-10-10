@@ -9,7 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Память диалогов: у каждого моба (по UUID) своя история, хранится в config/mobtalk_memory.json */
+/** Память диалогов: у каждого моба (по UUID) своя история, хранится в config/mobtalk_memory_v2.json */
 public class Memory {
     public static class Msg {
         public String role;
@@ -27,7 +27,7 @@ public class Memory {
     private static final Map<String, List<Msg>> DATA = new HashMap<>();
 
     private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory.json");
+        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory_v2.json");
     }
 
     public static synchronized void load() {

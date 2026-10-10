@@ -46,7 +46,12 @@ public class Api {
         JsonObject body = new JsonObject();
         body.addProperty("model", c.chatModel);
         body.addProperty("temperature", 0.9);
-        body.addProperty("max_tokens", 200);
+        body.addProperty("max_tokens", 350);
+        if (c.jsonMode) {
+            JsonObject rf = new JsonObject();
+            rf.addProperty("type", "json_object");
+            body.add("response_format", rf);
+        }
         JsonArray arr = new JsonArray();
         arr.add(msg("system", system));
         for (Memory.Msg m : history) arr.add(msg(m.role, m.content));

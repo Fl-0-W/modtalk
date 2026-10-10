@@ -78,7 +78,15 @@ public class Mic {
         }
     }
 
-    public static void play(byte[] pcm) {
+    public static void play(byte[] pcm, float gain) {
+        if (gain < 0.99f) {
+            for (int i = 0; i + 1 < pcm.length; i += 2) {
+                short v = (short) ((pcm[i] & 0xFF) | (pcm[i + 1] << 8));
+                v = (short) (v * gain);
+                pcm[i] = (byte) v;
+                pcm[i + 1] = (byte) (v >> 8);
+            }
+        }
         try (SourceDataLine sdl = AudioSystem.getSourceDataLine(PLAY)) {
             sdl.open(PLAY);
             sdl.start();

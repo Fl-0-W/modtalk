@@ -3,13 +3,14 @@
   "id": "mobtalk",
   "version": "${version}",
   "name": "MobTalk",
-  "description": "Говори с мобами голосом: у каждого свой характер и память.",
+  "description": "Говори с мобами голосом: у каждого свой характер, голос и память.",
   "authors": ["You"],
   "license": "MIT",
   "environment": "client",
   "entrypoints": {
     "client": ["com.example.mobtalk.MobTalkClient"]
   },
+  "mixins": ["mobtalk.mixins.json"],
   "depends": {
     "fabricloader": ">=0.15.0",
     "minecraft": "~1.20.1",
