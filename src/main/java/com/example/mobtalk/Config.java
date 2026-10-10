@@ -11,16 +11,17 @@ import java.util.List;
 
 public class Config {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final List<String> DEFAULT_VOICES = List.of("alloy", "echo", "fable", "onyx", "nova", "shimmer");
+    private static final List<String> DEFAULT_VOICES = List.of("marin", "cedar", "coral", "ash", "sage", "ballad", "verse", "alloy", "echo", "fable", "onyx", "nova", "shimmer");
 
     public String apiKey = "";
     public String baseUrl = "https://api.openai.com/v1";
     public String sttModel = "whisper-1";
     public String chatModel = "gpt-4o-mini";
-    public String ttsModel = "tts-1";
+    public String ttsModel = "gpt-4o-mini-tts";
     public String language = "ru";
     public int maxHistory = 24;
     public boolean jsonMode = true;
+    public int configVersion = 0;
 
     /** Список голосов для озвучки. Каждый моб получает свой голос из этого списка. */
     public List<String> voices = new ArrayList<>(DEFAULT_VOICES);
@@ -48,6 +49,13 @@ public class Config {
             if (Files.exists(p)) {
                 Config read = GSON.fromJson(Files.readString(p), Config.class);
                 if (read != null) c = read;
+            }
+            if (c.configVersion < 2) { // миграция на более живую озвучку (только для OpenAI)
+                if (c.baseUrl != null && c.baseUrl.contains("api.openai.com")) {
+                    c.ttsModel = "gpt-4o-mini-tts";
+                    c.voices = new ArrayList<>(DEFAULT_VOICES);
+                }
+                c.configVersion = 2;
             }
             if (c.voices == null || c.voices.isEmpty()) c.voices = new ArrayList<>(DEFAULT_VOICES);
             Files.createDirectories(p.getParent());

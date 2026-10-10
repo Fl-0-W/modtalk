@@ -71,13 +71,18 @@ public class Api {
     }
 
     /** Возвращает сырой PCM 24 кГц, 16 бит, моно. */
-    public static byte[] tts(String text, String voice, double speed) throws Exception {
+    public static byte[] tts(String text, String voice, double speed, String instructions) throws Exception {
         Config c = Config.INSTANCE;
         JsonObject body = new JsonObject();
         body.addProperty("model", c.ttsModel);
         body.addProperty("input", text);
         body.addProperty("voice", voice);
-        body.addProperty("speed", speed);
+        if (c.ttsModel.startsWith("gpt-4o")) {
+            // новая модель: манера речи задаётся текстом, а не числовой скоростью
+            if (instructions != null && !instructions.isBlank()) body.addProperty("instructions", instructions);
+        } else {
+            body.addProperty("speed", speed);
+        }
         body.addProperty("response_format", "pcm");
 
         HttpRequest req = HttpRequest.newBuilder(URI.create(c.baseUrl + "/audio/speech"))

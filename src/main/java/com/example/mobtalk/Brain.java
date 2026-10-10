@@ -250,10 +250,11 @@ public class Brain {
         Personalities.Profile p = Personalities.profile(m.type(), m.hostile());
         double sp = p.speed() * (0.9 + Math.floorMod(m.id().getLeastSignificantBits(), 21L) / 100.0);
         final double speed = Math.max(0.7, Math.min(1.4, sp));
+        final String instr = Personalities.voiceInstructions(m.type(), m.id());
 
         CompletableFuture<byte[]> f = CompletableFuture.supplyAsync(() -> {
             try {
-                return Api.tts(text, voice, speed);
+                return Api.tts(text, voice, speed, instr);
             } catch (Exception e) {
                 MobTalkClient.LOG.warn("TTS error: {}", e.getMessage());
                 if (reportErr) {
