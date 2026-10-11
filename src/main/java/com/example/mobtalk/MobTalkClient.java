@@ -178,7 +178,7 @@ public class MobTalkClient implements ClientModInitializer {
         String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
         boolean hostile = Personalities.isHostile(type, e instanceof HostileEntity);
         return new Brain.Mob(e.getUuid(), type, Personalities.displayName(e), hostile,
-                e.distanceTo(mc.player), Personalities.persona(e));
+                e.distanceTo(mc.player), Personalities.persona(e), e.isBaby());
     }
 
     private static List<Brain.Mob> nearbyMobs(MinecraftClient mc, int max) {
@@ -190,6 +190,16 @@ public class MobTalkClient implements ClientModInitializer {
         for (MobEntity e : list) {
             if (out.size() >= max) break;
             out.add(toMob(e, mc));
+        }
+        // одинаковые подписи («Корова», «Корова») различаем номерами, чтобы мобы не путались друг с другом
+        Map<String, Integer> total = new HashMap<>(), seen = new HashMap<>();
+        for (Brain.Mob m : out) total.merge(m.name(), 1, Integer::sum);
+        for (int i = 0; i < out.size(); i++) {
+            Brain.Mob m = out.get(i);
+            if (total.get(m.name()) > 1) {
+                int n = seen.merge(m.name(), 1, Integer::sum);
+                out.set(i, new Brain.Mob(m.id(), m.type(), m.name() + " №" + n, m.hostile(), m.dist(), m.persona(), m.baby()));
+            }
         }
         return out;
     }
@@ -218,7 +228,7 @@ public class MobTalkClient implements ClientModInitializer {
 
     private static boolean canSpeak(String type, UUID id, boolean hostileFallback) {
         boolean hostile = Personalities.isHostile(type, hostileFallback);
-        return !hostile || State.isTruce(id) || State.personal(id) >= 25; // враждебные молчат, пока не подружитесь
+        return !hostile || State.isTruce(id) || Reputation.attitude(id, type) >= 20; // враждебные молчат, пока не подружитесь
     }
 
     // ---------- спонтанная речь: события, приветствия, болтовня ----------
@@ -233,6 +243,7 @@ public class MobTalkClient implements ClientModInitializer {
             EVENTS.clear();
         }
         Config c = Config.INSTANCE;
+        State.decayDay(mc.world.getTimeOfDay() / 24000L); // фракции медленно остывают
         detectEvents(mc);
         long now = System.currentTimeMillis();
         EVENTS.removeIf(e -> now - e.time() > 20000);

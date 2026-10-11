@@ -21,7 +21,7 @@ import java.util.function.Function;
 
 /** Вся логика разговора: сцена, репутация, действия, поручения, память, озвучка. */
 public class Brain {
-    public record Mob(UUID id, String type, String name, boolean hostile, double dist, String persona) {}
+    public record Mob(UUID id, String type, String name, boolean hostile, double dist, String persona, boolean baby) {}
 
     public record Scene(List<Mob> mobs, String inventory, String context, String playerName, UUID playerId) {}
 
@@ -240,19 +240,22 @@ public class Brain {
     // ---------- репутация ----------
 
     static void applyRep(MinecraftClient mc, Mob m, int rep) {
-        int d = Math.max(-8, Math.min(8, rep));
-        if (d == 0) return;
-        int after = State.addPersonal(m.id(), d);
-        int sd = d / 3;
-        if (sd != 0) State.addSpecies(m.type(), sd);
-        MobTalkClient.chat(mc, "§7[" + m.name() + ": " + (d > 0 ? "§a+" : "§c") + d + "§7 · "
-                + Reputation.color(after) + Reputation.tier(after) + " (" + Reputation.fmt(after) + ")§7]");
+        long day = mc.world != null ? mc.world.getTimeOfDay() / 24000L : 0L;
+        Reputation.TalkResult r = Reputation.applyTalk(m.id(), m.type(), rep, day);
+        if (r == null) return;
+        int after = r.attitude();
+        if (r.delta() == 0) { // дневной лимит исчерпан: моб уже «наговорился» на сегодня
+            MobTalkClient.overlay(mc, "§7" + m.name() + ": сегодня отношение уже не улучшить словами");
+            return;
+        }
+        MobTalkClient.overlay(mc, "§7" + m.name() + ": " + (r.delta() > 0 ? "§a+" : "§c") + r.delta() + " §7· "
+                + Reputation.color(after) + Reputation.tier(after) + " (" + Reputation.fmt(after) + ")");
 
         if (m.hostile()) { // друзья не нападают; потеря доверия снимает перемирие
-            if (after >= 70 && !State.isTruce(m.id())) {
+            if (after >= 60 && !State.isTruce(m.id())) {
                 State.setTruce(m.id(), true);
                 MobTalkClient.chat(mc, "§a[" + m.name() + " считает вас другом и больше не нападает]");
-            } else if (after <= -30 && State.isTruce(m.id())) {
+            } else if (after <= -25 && State.isTruce(m.id())) {
                 State.setTruce(m.id(), false);
                 MobTalkClient.chat(mc, "§c[" + m.name() + " потерял к вам доверие и снова враждебен]");
             }
@@ -347,24 +350,40 @@ public class Brain {
         MobTalkClient.chat(mc, "§e" + m.name() + (toName != null ? "§7 → " + toName : "") + "§f: " + text);
 
         Config c = Config.INSTANCE;
-        List<String> vs = Api.voiceList();
-        if (vs.isEmpty()) {
-            if (reportErr)
-                MobTalkClient.chat(mc, "§c[MobTalk] Нет голосов для озвучки. Проверь ttsProvider и ключ в config/mobtalk.json.");
-            return;
-        }
-        List<Double> variants = c.pitchVariants;
-        int idx = State.voiceIndex(m.id(), vs.size(), variants.size());
-        final String voice = vs.get(idx % vs.size());
-        final double pitch = variants.get((idx / vs.size()) % variants.size());
+        final boolean yandex = "yandex".equalsIgnoreCase(c.ttsProvider);
+        final String voice, role, instr;
+        final double pitch, speed;
+        if (yandex) {
+            // голос по виду моба; отличия внутри вида (голос из пула, высота, темп) выводятся из UUID
+            VoiceBank.Voice v = VoiceBank.pick(m.type(), m.id(), m.baby());
+            voice = v.voice();
+            role = v.role();
+            pitch = v.pitch();
+            speed = v.speed();
+            instr = null;
+        } else {
+            List<String> vs = Api.voiceList();
+            if (vs.isEmpty()) {
+                if (reportErr)
+                    MobTalkClient.chat(mc, "§c[MobTalk] Нет голосов для озвучки. Проверь ttsProvider и ключ в config/mobtalk.json.");
+                return;
+            }
+            List<Double> variants = c.pitchVariants;
+            int idx = State.voiceIndex(m.id(), vs.size(), variants.size());
+            voice = vs.get(idx % vs.size());
+            role = "";
+            pitch = variants.get((idx / vs.size()) % variants.size());
 
-        Personalities.Profile p = Personalities.profile(m.type(), m.hostile());
-        double sp = p.speed() * (0.9 + Math.floorMod(m.id().getLeastSignificantBits(), 21L) / 100.0);
-        final double speed = Math.max(0.7, Math.min(1.4, sp));
-        final String instr = Personalities.voiceInstructions(m.type(), m.id());
+            Personalities.Profile p = Personalities.profile(m.type(), m.hostile());
+            double sp = p.speed() * (0.9 + Math.floorMod(m.id().getLeastSignificantBits(), 21L) / 100.0);
+            speed = Math.max(0.7, Math.min(1.4, sp));
+            instr = Personalities.voiceInstructions(m.type(), m.id());
+        }
 
         CompletableFuture<byte[]> f = CompletableFuture.supplyAsync(() -> {
             try {
+                // повышение высоты через resample ускоряет речь, поэтому темп у Яндекса просим с поправкой
+                if (yandex) return Api.ttsYandex(text, voice, role, speed / Math.max(0.5, pitch));
                 return Api.tts(text, voice, speed, instr);
             } catch (Exception e) {
                 MobTalkClient.LOG.warn("TTS error: {}", e.getMessage());

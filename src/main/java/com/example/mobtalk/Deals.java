@@ -148,8 +148,9 @@ public class Deals {
         if (mob instanceof VillagerEntity) mob.playSound(SoundEvents.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
         if (paid) {
             String type = Registries.ENTITY_TYPE.getId(mob.getType()).getPath();
-            int after = State.addPersonal(d.mob, 4); // честная сделка укрепляет доверие
-            State.addSpecies(type, 1);
+            State.addPersonal(d.mob, 4); // честная сделка укрепляет доверие
+            Reputation.addFaction(type, 1);
+            int after = Reputation.attitude(d.mob, type);
             if (p instanceof ServerPlayerEntity sp)
                 sp.sendMessage(Text.literal("§a[Сделка] " + d.mobName + " выбросил вам: " + d.giveName
                         + " §7(отношение +4 · " + Reputation.tier(after) + ")"), false);

@@ -229,8 +229,9 @@ public class Quests {
             Item r = item(q.rewardItem);
             if (r != null) Deals.toss(giver, new ItemStack(r, q.rewardCount), p);
         }
-        int after = State.addPersonal(giver.getUuid(), 10);
-        State.addSpecies(q.giverType, 3);
+        State.addPersonal(giver.getUuid(), 10);
+        Reputation.addFaction(q.giverType, 3);
+        int after = Reputation.attitude(giver.getUuid(), q.giverType);
         if (p instanceof ServerPlayerEntity sp) {
             sp.sendMessage(Text.literal("§a[Задание «" + q.title + "» сдано] " + q.giverName
                     + (q.rewardItem.isBlank() ? " благодарит вас" : " выдал награду: " + reward(q))

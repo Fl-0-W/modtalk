@@ -119,6 +119,11 @@ public class Api {
     // ---------- Яндекс SpeechKit (API v3, REST) ----------
 
     private static byte[] ttsYandex(String text, String voice, double speed) throws Exception {
+        return ttsYandex(text, voice, "", speed);
+    }
+
+    /** Озвучка Яндексом: voice + необязательное амплуа (role), speed — темп (1.0 — обычный). */
+    public static byte[] ttsYandex(String text, String voice, String role, double speed) throws Exception {
         Config c = Config.INSTANCE;
         ByteArrayOutputStream pcm48 = new ByteArrayOutputStream();
         for (String part : splitText(text, 230)) { // лимит фразы в API v3 — около 250 символов
@@ -134,8 +139,13 @@ public class Api {
             JsonObject hv = new JsonObject();
             hv.addProperty("voice", voice);
             hints.add(hv);
+            if (role != null && !role.isBlank() && c.yandexRoles) {
+                JsonObject hr = new JsonObject();
+                hr.addProperty("role", role);
+                hints.add(hr);
+            }
             JsonObject hs = new JsonObject();
-            hs.addProperty("speed", Math.max(0.85, Math.min(1.2, speed)));
+            hs.addProperty("speed", Math.max(0.6, Math.min(1.6, speed)));
             hints.add(hs);
             body.add("hints", hints);
             body.addProperty("loudnessNormalizationType", "LUFS");

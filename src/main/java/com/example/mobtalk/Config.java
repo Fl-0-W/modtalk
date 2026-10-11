@@ -7,7 +7,9 @@ import net.fabricmc.loader.api.FabricLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class Config {
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -37,6 +39,17 @@ public class Config {
     public String yandexFolderId = "";
     public List<String> yandexVoices = new ArrayList<>(List.of(
             "alexander", "marina", "kirill", "masha", "anton", "dasha", "filipp", "julia", "lera", "alena"));
+
+    /**
+     * Голоса по видам (только Яндекс). Ключ — вид моба, значение — голоса через запятую (в формате «имя» или
+     * «имя/role»), из них моб выбирает свой. Пример: {"skeleton": "kirill/strict,anton"}. Что не указано —
+     * берётся из встроенной таблицы (см. VoiceBank).
+     */
+    public Map<String, String> speciesVoices = new HashMap<>();
+    /** Насколько мобы одного вида различаются по высоте и темпу: 0 — одинаково, 1 — по умолчанию, 2 — сильнее. */
+    public double voiceVariation = 1.0;
+    /** Передавать Яндексу амплуа голоса (role: good, evil, friendly…). Выключи, если голос не поддерживает. */
+    public boolean yandexRoles = true;
 
     /** Список голосов для озвучки. Каждый моб получает свой голос из этого списка. */
     public List<String> voices = new ArrayList<>(DEFAULT_VOICES);
@@ -106,6 +119,7 @@ public class Config {
         }
         if (c.elevenVoices == null) c.elevenVoices = new ArrayList<>();
         if (c.pitchVariants == null || c.pitchVariants.isEmpty()) c.pitchVariants = new ArrayList<>(List.of(1.0));
+        if (c.speciesVoices == null) c.speciesVoices = new HashMap<>();
         if (c.yandexApiKey == null) c.yandexApiKey = "";
         if (c.yandexFolderId == null) c.yandexFolderId = "";
         if (c.yandexVoices == null || c.yandexVoices.isEmpty())

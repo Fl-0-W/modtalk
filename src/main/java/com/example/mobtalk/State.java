@@ -24,7 +24,10 @@ public class State {
         Map<String, Integer> voices = new HashMap<>();
         Map<String, Integer> personal = new HashMap<>();
         Map<String, Integer> species = new HashMap<>();
+        int version = 0;
     }
+
+    private static long lastDay = -1;
 
     private static Path file() {
         return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_state.json");
@@ -82,6 +85,27 @@ public class State {
         return new HashMap<>(SPECIES);
     }
 
+    /** Раз в игровые сутки репутация фракций остывает к нулю на 1 пункт (отношение отдельных мобов не меняется). */
+    public static synchronized void decayDay(long day) {
+        if (lastDay < 0 || day < lastDay) { // первый вызов или другой мир: просто запоминаем день
+            lastDay = day;
+            return;
+        }
+        if (day == lastDay) return;
+        int steps = (int) Math.min(30, day - lastDay);
+        lastDay = day;
+        boolean changed = false;
+        for (Map.Entry<String, Integer> en : SPECIES.entrySet()) {
+            int v = en.getValue();
+            int nv = v > 0 ? Math.max(0, v - steps) : Math.min(0, v + steps);
+            if (nv != v) {
+                en.setValue(nv);
+                changed = true;
+            }
+        }
+        if (changed) save();
+    }
+
     // ----- голоса: (голос, вариант высоты) закрепляются за мобом навсегда -----
 
     public static synchronized int voiceIndex(UUID id, int nVoices, int nVariants) {
@@ -127,7 +151,13 @@ public class State {
             for (String s : d.follow) FOLLOW.add(UUID.fromString(s));
             d.voices.forEach((k, x) -> VOICES.put(UUID.fromString(k), x));
             d.personal.forEach((k, x) -> PERSONAL.put(UUID.fromString(k), x));
-            SPECIES.putAll(d.species);
+            if (d.version < 2) { // старые записи были по видам, теперь — по фракциям: сливаем с ослаблением
+                for (Map.Entry<String, Integer> en : d.species.entrySet())
+                    SPECIES.merge(Reputation.factionOf(en.getKey()), en.getValue() / 2,
+                            (a, b) -> Math.max(-100, Math.min(100, a + b)));
+            } else {
+                SPECIES.putAll(d.species);
+            }
         } catch (Exception e) {
             MobTalkClient.LOG.error("State load error", e);
         }
@@ -141,6 +171,7 @@ public class State {
             VOICES.forEach((k, x) -> d.voices.put(k.toString(), x));
             PERSONAL.forEach((k, x) -> d.personal.put(k.toString(), x));
             d.species.putAll(SPECIES);
+            d.version = 2;
             Files.writeString(file(), GSON.toJson(d));
         } catch (Exception e) {
             MobTalkClient.LOG.error("State save error", e);

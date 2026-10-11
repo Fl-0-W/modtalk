@@ -1,23 +1,30 @@
 package com.example.mobtalk;
 
 import net.minecraft.entity.Entity;
+import net.minecraft.entity.EntityType;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.passive.VillagerEntity;
 import net.minecraft.registry.Registries;
+import net.minecraft.util.Identifier;
 
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Характеры видов, индивидуальные черты мобов, голосовой образ и сборка системного промпта. */
 public class Personalities {
     public record Profile(String prompt, double speed, boolean hostile, boolean trader) {}
 
-    private static final String[] NAMES = {
-            "Борис", "Гоша", "Дуся", "Макс", "Зина", "Тимофей", "Клава", "Ёжик", "Фёдор", "Люся",
-            "Вова", "Рита", "Степан", "Нюра", "Кузьма", "Лёва", "Маруся", "Тихон", "Глаша", "Пётр",
-            "Сеня", "Валя", "Ермак", "Фрося", "Гена", "Ляля", "Мишка", "Тоня", "Яша", "Бася"};
+    /** Как называть жителей по профессии (у остальных мобов подпись — название вида). */
+    private static final Map<String, String> PROF_LABELS = Map.ofEntries(
+            Map.entry("farmer", "Фермер"), Map.entry("librarian", "Библиотекарь"), Map.entry("cleric", "Священник"),
+            Map.entry("armorer", "Бронник"), Map.entry("weaponsmith", "Оружейник"),
+            Map.entry("toolsmith", "Инструментальщик"), Map.entry("butcher", "Мясник"),
+            Map.entry("leatherworker", "Кожевник"), Map.entry("mason", "Каменщик"), Map.entry("fisherman", "Рыбак"),
+            Map.entry("shepherd", "Пастух"), Map.entry("fletcher", "Стрелочник"),
+            Map.entry("cartographer", "Картограф"), Map.entry("nitwit", "Недотёпа"), Map.entry("none", "Житель"));
 
     /** Индивидуальные черты: у каждого моба своя, стабильная. */
     private static final String[] QUIRKS = {
@@ -75,12 +82,14 @@ public class Personalities {
     }
 
     private static final String COMMON =
-            "Ты — моб из игры Minecraft. Твоё имя: «%s» (вид: %s). Рядом с тобой игрок %s. "
+            "Ты — моб из игры Minecraft: %s (вид: %s). Рядом с тобой игрок %s. "
+            + "У тебя нет собственного имени: не придумывай себе имя и не называй никого по выдуманным именам — "
+            + "к другим существам обращайся по роли или виду («сосед», «фермер», «зомби»), а к игроку — по его нику. "
             + "Отвечай ТОЛЬКО одним JSON-объектом без markdown и пояснений: {\"say\": \"...\", \"rep\": 0, \"actions\": []}. "
             + "say — твоя реплика вслух на русском (1–3 коротких предложения, до 45 слов; без эмодзи, звёздочек и ремарок — "
             + "реплику озвучат голосом). Если слова игрока явно адресованы кому-то другому или тебе нечего сказать — "
             + "say пустая строка, и ты промолчишь. "
-            + "rep — целое число от −8 до 8: насколько изменилось твоё отношение к игроку после его последней реплики "
+            + "rep — целое число от −5 до 5: насколько изменилось твоё отношение к игроку после его последней реплики "
             + "(0, если не изменилось). Комплименты, честность, смешные шутки, подарки и заботу засчитывай в плюс; "
             + "оскорбления, угрозы, обман и давление — в минус; одна фраза не должна менять отношение сильно. "
             + "Делай разговор живым и интересным: у тебя есть характер, мнение и свои заботы; иногда задавай игроку "
@@ -251,12 +260,30 @@ public class Personalities {
         return p != null ? p.hostile() : fallback;
     }
 
-    /** Имя моба: своё (name tag) либо «Вид Имя», стабильное для данного моба. */
+    /**
+     * Подпись моба без выдуманных имён: своё имя (name tag), если игрок его дал; у жителей — профессия
+     * («Фермер»); у остальных — название вида («Зомби»). У детёнышей добавляется пометка.
+     */
     public static String displayName(Entity e) {
         if (e.hasCustomName() && e.getCustomName() != null) return e.getCustomName().getString();
         String base = e.getType().getName().getString();
-        int idx = (int) Math.floorMod(e.getUuid().getLeastSignificantBits(), (long) NAMES.length);
-        return base + " " + NAMES[idx];
+        if (e instanceof VillagerEntity v) {
+            String prof = Registries.VILLAGER_PROFESSION.getId(v.getVillagerData().getProfession()).getPath();
+            String label = PROF_LABELS.get(prof);
+            if (label != null) base = label;
+        }
+        if (e instanceof MobEntity m && m.isBaby()) return base + " (малыш)";
+        return base;
+    }
+
+    /** Название вида по id без пространства имён («zombie» -> «Зомби»). */
+    public static String speciesName(String type) {
+        Identifier id = Identifier.tryParse("minecraft:" + type);
+        if (id != null) {
+            Optional<EntityType<?>> t = Registries.ENTITY_TYPE.getOrEmpty(id);
+            if (t.isPresent()) return t.get().getName().getString();
+        }
+        return type;
     }
 
     /** Индивидуальная личность конкретного моба: черта, тайна, профессия, состояние. */
@@ -282,15 +309,18 @@ public class Personalities {
                                       String inventory, String context, boolean actions) {
         Profile p = profile(m.type(), m.hostile());
         int pers = State.personal(m.id());
-        int spec = State.species(m.type());
+        int att = Reputation.attitude(m.id(), m.type());
+        int spec = Reputation.factionRep(m.type());
         StringBuilder sb = new StringBuilder();
         sb.append(String.format(COMMON, m.name(), m.type(), player));
         sb.append(p.prompt()).append(" ");
         if (m.persona() != null && !m.persona().isEmpty()) sb.append("\n").append(m.persona());
-        sb.append("\nОтношение: лично к игроку ").append(Reputation.fmt(pers)).append(" из 100 (")
-                .append(Reputation.tier(pers)).append("); репутация игрока среди таких, как ты, ")
+        sb.append("\nОтношение: итоговое отношение к игроку ").append(Reputation.fmt(att)).append(" из 100 (")
+                .append(Reputation.tier(att)).append("); личный опыт общения ").append(Reputation.fmt(pers))
+                .append(", слава игрока среди твоих сородичей (")
+                .append(Reputation.factionName(Reputation.factionOf(m.type()))).append(") ")
                 .append(Reputation.fmt(spec)).append(" (").append(Reputation.tier(spec)).append("). ")
-                .append(Reputation.guidance(pers, p.trader())).append(" ");
+                .append(Reputation.guidance(att, p.trader())).append(" ");
         String sum = Memory.summary(m.id());
         if (!sum.isBlank()) sb.append("\nТвоя память о прошлых разговорах (кратко): ").append(sum).append(" ");
         if (actions) {
