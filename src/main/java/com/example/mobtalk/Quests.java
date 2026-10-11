@@ -100,7 +100,12 @@ public class Quests {
     private static final int MAX_ACTIVE = 5;
 
     private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_quests.json");
+        return Worlds.file("mobtalk_quests.json");
+    }
+
+    public static synchronized void reset() {
+        LIST.clear();
+        PENDING.clear();
     }
 
     public static synchronized void load() {

@@ -45,7 +45,18 @@ public class State {
     private static long lastDay = -1;
 
     private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_state.json");
+        return Worlds.file("mobtalk_state.json");
+    }
+
+    /** Сброс состояния при смене мира (дальше Worlds подгрузит данные нового мира). */
+    public static synchronized void reset() {
+        TRUCE.clear();
+        FOLLOW.clear();
+        VOICES.clear();
+        PERSONAL.clear();
+        SPECIES.clear();
+        HISTORY.clear();
+        lastDay = -1;
     }
 
     // ----- перемирие / следование -----

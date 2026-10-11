@@ -32,11 +32,15 @@ public class Memory {
     private static final Map<String, Entry> DATA = new HashMap<>();
 
     private static Path file() {
-        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory_v3.json");
+        return Worlds.file("mobtalk_memory_v3.json");
     }
 
     private static Path oldFile() {
-        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory_v2.json");
+        return Worlds.file("mobtalk_memory_v2.json");
+    }
+
+    public static synchronized void reset() {
+        DATA.clear();
     }
 
     public static synchronized void load() {

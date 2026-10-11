@@ -117,6 +117,7 @@ public class MobTalkClient implements ClientModInitializer {
     private static final Set<UUID> NEAR = new HashSet<>();
     private static boolean nearSeeded;
     private static Object lastWorld;
+    private static net.minecraft.client.world.ClientWorld lastWorld;
     private static long lastSpontaneous;
     private static int greetTimer;
     private static long prevDayTime = -1;
@@ -135,9 +136,7 @@ public class MobTalkClient implements ClientModInitializer {
     @Override
     public void onInitializeClient() {
         Config.reload();
-        State.load();
-        Memory.load();
-        Quests.load();
+        // State/Memory/Quests подгружаются по миру: см. Worlds.enter (при заходе в мир)
         talkKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.mobtalk.talk", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_V, "category.mobtalk"));
         repKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
@@ -197,6 +196,10 @@ public class MobTalkClient implements ClientModInitializer {
             freeWindowKey(mc);
         }
         if (mc.player == null || mc.world == null) return;
+        if (mc.world != lastWorld) { // зашли в мир (или сменили измерение): подгрузить состояние именно этого мира
+            lastWorld = mc.world;
+            Worlds.enter(mc);
+        }
         while (repKey.wasPressed()) Reputation.show(mc);
         while (windowKey.wasPressed()) {
             if (mc.currentScreen == null) mc.setScreen(new ReputationScreen());
