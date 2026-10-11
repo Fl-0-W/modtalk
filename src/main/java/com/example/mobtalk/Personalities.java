@@ -350,7 +350,7 @@ public class Personalities {
         if (actions) {
             sb.append("\n").append(ACTIONS_BASE);
             if (m.hostile()) sb.append(ACTIONS_TRUCE);
-            if (p.trader()) sb.append(ACTIONS_TRADE);
+            if (p.trader()) sb.append(ACTIONS_TRADE).append(Market.prompt(m.type(), m.profession()));
             if ("villager".equals(m.type())) sb.append(questPrompt(m.profession()));
             String qd = Quests.describeFor(m.id());
             if (!qd.isEmpty()) sb.append("\n").append(qd).append(" ");

@@ -144,7 +144,7 @@ public class Brain {
         String err = null;
         JsonObject trade = find(r.actions(), "TRADE");
         if (trade != null && Personalities.profile(m.type(), m.hostile()).trader()) {
-            String res = onServer(mc, srv -> Deals.create(srv, m.id(), m.name(), trade));
+            String res = onServer(mc, srv -> Deals.create(srv, m.id(), m.name(), m.type(), m.profession(), trade));
             if (res.startsWith("OK:")) MobTalkClient.chat(mc, "§a[Сделка] " + res.substring(3));
             else err = res.substring(4);
         }

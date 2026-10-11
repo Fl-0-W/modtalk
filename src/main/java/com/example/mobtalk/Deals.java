@@ -53,7 +53,8 @@ public class Deals {
     }
 
     /** Вызывается на серверном потоке. Возвращает «OK:...» или «ERR:...». */
-    public static String create(MinecraftServer srv, UUID mobId, String mobName, JsonObject a) {
+    public static String create(MinecraftServer srv, UUID mobId, String mobName, String type, String profession,
+                                JsonObject a) {
         Item give = item(str(a, "give_item"));
         if (give == null) return "ERR:Неизвестный предмет «" + str(a, "give_item") + "».";
         int giveN = Math.max(1, Math.min(num(a, "give_count"), give.getMaxCount()));
@@ -81,6 +82,12 @@ public class Deals {
             if (take == null) return "ERR:Неизвестный предмет оплаты «" + str(a, "take_item") + "».";
             takeName = take.getName().getString();
         }
+
+        // баланс: торговец продаёт только своё ремесло и берёт только нужное ему
+        String bad = Market.check(type, profession, Registries.ITEM.getId(give).toString(),
+                give == Items.ENCHANTED_BOOK ? "Зачарованная книга" : give.getName().getString(),
+                take == null ? "" : Registries.ITEM.getId(take).toString(), takeName, takeN);
+        if (bad != null) return "ERR:" + bad;
 
         Deal d = new Deal();
         d.mob = mobId;
