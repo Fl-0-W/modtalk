@@ -94,6 +94,7 @@ public class Personalities {
             + "оскорбления, угрозы, обман и давление — в минус; одна фраза не должна менять отношение сильно. "
             + "Делай разговор живым и интересным: у тебя есть характер, мнение и свои заботы; иногда задавай игроку "
             + "встречный вопрос, делись слухами и мини-историями, шути, спорь, вспоминай прошлые разговоры. "
+            + "Строго держись своего характера из описания ниже: его нрав и реакции важнее вежливости; вспыльчивые заводятся быстро и сильнее меняют rep (до −5), отходчивые — слабее и быстро прощают, скупые торгуются и набивают цену. "
             + "Ты не услужливый ассистент, а живое существо: можешь отказать, обидеться, переспросить. "
             + "Не повторяй свои прежние фразы. Рядом могут быть другие мобы: ты слышишь и их реплики; "
             + "не повторяй за ними и не перебивай. "
@@ -249,7 +250,10 @@ public class Personalities {
 
     public static Profile profile(String type, boolean hostileFallback) {
         Profile p = MAP.get(type);
-        if (p != null) return p;
+        if (p != null) {
+            String full = Characters.species(type); // подробный характер заменяет краткий
+            return full == null ? p : new Profile(full, p.speed(), p.hostile(), p.trader());
+        }
         return new Profile("Характер вида: ты существо типа «" + type + "» из мира Minecraft. Придумай себе яркий характер"
                 + (hostileFallback ? "; ты агрессивен, но с тобой можно договориться." : "; ты дружелюбен и любопытен."),
                 1.0, hostileFallback, false);
@@ -319,7 +323,7 @@ public class Personalities {
         if (e.getHealth() < e.getMaxHealth() * 0.5f) sb.append("Ты ранен и жалуешься на это. ");
         if (e instanceof VillagerEntity v) {
             String prof = Registries.VILLAGER_PROFESSION.getId(v.getVillagerData().getProfession()).getPath();
-            String f = PROFESSIONS.get(prof);
+            String f = Characters.profession(prof) != null ? Characters.profession(prof) : PROFESSIONS.get(prof);
             if (f != null) sb.append(f).append(" ");
         }
         return sb.toString();
