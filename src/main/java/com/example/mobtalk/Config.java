@@ -77,15 +77,15 @@ public class Config {
     /** Мобы заговаривают первыми, когда вы подходите. */
     public boolean greetings = true;
     public double greetRadius = 5.0;
-    public double greetChance = 0.6;
-    public int greetCooldownSec = 240;
+    public double greetChance = 0.3;
+    public int greetCooldownSec = 480;
 
     /** Мобы реагируют на события: ночь, дождь, гроза, рейд, урон игроку, гибель соседа. */
     public boolean reactions = true;
 
     /** Редкие короткие разговоры мобов между собой. */
     public boolean ambientChatter = true;
-    public int chatterIntervalSec = 120;
+    public int chatterIntervalSec = 240;
     public double chatterRadius = 14.0;
 
     public static Config INSTANCE = load();
@@ -96,11 +96,15 @@ public class Config {
 
     private static Config load() {
         Config c = new Config();
+        boolean fromFile = false;
         try {
             Path p = FabricLoader.getInstance().getConfigDir().resolve("mobtalk.json");
             if (Files.exists(p)) {
                 Config read = GSON.fromJson(Files.readString(p), Config.class);
-                if (read != null) c = read;
+                if (read != null) {
+                    c = read;
+                    fromFile = true;
+                }
             }
             if (c.configVersion < 2) { // миграция на более живую озвучку (только для OpenAI)
                 if (c.baseUrl != null && c.baseUrl.contains("api.openai.com")) {
@@ -108,6 +112,14 @@ public class Config {
                     c.voices = new ArrayList<>(DEFAULT_VOICES);
                 }
                 c.configVersion = 2;
+            }
+            if (c.configVersion < 3) { // мобы заговаривают сами вдвое реже (у нового конфига уже новые значения)
+                if (fromFile) {
+                    c.greetChance = c.greetChance * 0.5;
+                    c.greetCooldownSec = c.greetCooldownSec * 2;
+                    c.chatterIntervalSec = c.chatterIntervalSec * 2;
+                }
+                c.configVersion = 3;
             }
             if (c.voices == null || c.voices.isEmpty()) c.voices = new ArrayList<>(DEFAULT_VOICES);
             Files.createDirectories(p.getParent());

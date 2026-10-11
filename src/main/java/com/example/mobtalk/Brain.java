@@ -21,7 +21,8 @@ import java.util.function.Function;
 
 /** Вся логика разговора: сцена, репутация, действия, поручения, память, озвучка. */
 public class Brain {
-    public record Mob(UUID id, String type, String name, boolean hostile, double dist, String persona, boolean baby) {}
+    public record Mob(UUID id, String type, String name, boolean hostile, double dist, String persona, boolean baby,
+                      String profession) {}
 
     public record Scene(List<Mob> mobs, String inventory, String context, String playerName, UUID playerId) {}
 
@@ -138,9 +139,13 @@ public class Brain {
         }
         JsonObject quest = find(r.actions(), "QUEST");
         if (err == null && quest != null) {
-            String res = onServer(mc, srv -> Quests.create(srv, m.id(), m.name(), m.type(), quest));
-            if (res.startsWith("OK:")) MobTalkClient.chat(mc, "§e[Задание] " + res.substring(3));
-            else err = res.substring(4);
+            String res = onServer(mc, srv -> Quests.prepare(srv, m.id(), m.name(), m.type(), quest));
+            if (res.startsWith("OK:")) {
+                MobTalkClient.chat(mc, "§e[Поручение предложено] " + res.substring(3));
+                MobTalkClient.offerQuest(m.id()); // окно «принять / отказаться» появится сразу после реплики
+            } else {
+                err = res.substring(4);
+            }
         }
         if (err != null) {
             String note = "[Система] Не оформлено: " + err

@@ -277,6 +277,25 @@ public class Personalities {
         return base;
     }
 
+    /** Профессия жителя («farmer»), для остальных — пустая строка. */
+    public static String professionOf(Entity e) {
+        if (e instanceof VillagerEntity v)
+            return Registries.VILLAGER_PROFESSION.getId(v.getVillagerData().getProfession()).getPath();
+        return "";
+    }
+
+    /** Часть промпта о поручениях: только жители, и только по ремеслу. */
+    private static String questPrompt(String prof) {
+        String label = PROF_LABELS.getOrDefault(prof, "Житель");
+        return ACTIONS_QUEST
+                + "Ты даёшь поручения как житель деревни (" + label + ") и ТОЛЬКО связанные с твоим ремеслом: для FETCH "
+                + "просишь лишь предметы из списка [" + String.join(", ", Quests.itemsFor(prof)) + "] — они нужны тебе для "
+                + "работы, и в say коротко объясни зачем (кузнец — железо и уголь для кузницы, фермер — урожай, "
+                + "библиотекарь — бумага и чернила и т.п.). Задание KILL — только если мобы мешают твоему делу или угрожают "
+                + "деревне. Игроку сразу появится окно, где он САМ принимает или отклоняет поручение, поэтому в say "
+                + "предложи его, а не считай принятым. ";
+    }
+
     /** Название вида по id без пространства имён («zombie» -> «Зомби»). */
     public static String speciesName(String type) {
         Identifier id = Identifier.tryParse("minecraft:" + type);
@@ -328,7 +347,7 @@ public class Personalities {
             sb.append("\n").append(ACTIONS_BASE);
             if (m.hostile()) sb.append(ACTIONS_TRUCE);
             if (p.trader()) sb.append(ACTIONS_TRADE);
-            sb.append(ACTIONS_QUEST);
+            if ("villager".equals(m.type())) sb.append(questPrompt(m.profession()));
             String qd = Quests.describeFor(m.id());
             if (!qd.isEmpty()) sb.append("\n").append(qd).append(" ");
         } else {

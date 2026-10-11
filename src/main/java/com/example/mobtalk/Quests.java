@@ -10,6 +10,7 @@ import net.minecraft.entity.EntityType;
 import net.minecraft.entity.ItemEntity;
 import net.minecraft.entity.mob.MobEntity;
 import net.minecraft.entity.player.PlayerEntity;
+import net.minecraft.entity.player.PlayerInventory;
 import net.minecraft.item.Item;
 import net.minecraft.item.ItemStack;
 import net.minecraft.item.Items;
@@ -23,7 +24,9 @@ import net.minecraft.util.Identifier;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -46,6 +49,50 @@ public class Quests {
         int rewardCount;
         String title = "";
         boolean ready;
+        String profession = "";
+        double x, y, z;       // где заказчик (обновляется, пока он виден серверу)
+        String dim = "";
+        boolean live;         // true — позиция свежая, false — последняя известная
+    }
+
+    /** Предложенные, но ещё не принятые игроком задания (по заказчику). */
+    private static final Map<String, Quest> PENDING = new HashMap<>();
+
+    /** Что просят жители разных профессий: поручения связаны с их ремеслом. */
+    private static final Map<String, List<String>> PROF_ITEMS = new HashMap<>();
+    private static final List<String> GENERIC_ITEMS = List.of("minecraft:wheat", "minecraft:carrot", "minecraft:bread",
+            "minecraft:apple", "minecraft:coal", "minecraft:stick", "minecraft:cobblestone", "minecraft:oak_log");
+
+    static {
+        PROF_ITEMS.put("farmer", List.of("minecraft:wheat", "minecraft:carrot", "minecraft:potato", "minecraft:beetroot",
+                "minecraft:pumpkin", "minecraft:melon_slice", "minecraft:bread", "minecraft:bone_meal"));
+        PROF_ITEMS.put("librarian", List.of("minecraft:paper", "minecraft:book", "minecraft:ink_sac", "minecraft:feather",
+                "minecraft:lapis_lazuli", "minecraft:leather"));
+        PROF_ITEMS.put("cleric", List.of("minecraft:redstone", "minecraft:lapis_lazuli", "minecraft:rotten_flesh",
+                "minecraft:gold_ingot", "minecraft:nether_wart", "minecraft:glowstone_dust"));
+        PROF_ITEMS.put("armorer", List.of("minecraft:iron_ingot", "minecraft:coal", "minecraft:charcoal", "minecraft:diamond"));
+        PROF_ITEMS.put("weaponsmith", List.of("minecraft:iron_ingot", "minecraft:coal", "minecraft:stick", "minecraft:diamond"));
+        PROF_ITEMS.put("toolsmith", List.of("minecraft:iron_ingot", "minecraft:coal", "minecraft:stick", "minecraft:flint",
+                "minecraft:diamond"));
+        PROF_ITEMS.put("butcher", List.of("minecraft:beef", "minecraft:porkchop", "minecraft:chicken", "minecraft:mutton",
+                "minecraft:rabbit", "minecraft:coal"));
+        PROF_ITEMS.put("leatherworker", List.of("minecraft:leather", "minecraft:rabbit_hide", "minecraft:string",
+                "minecraft:flint"));
+        PROF_ITEMS.put("mason", List.of("minecraft:cobblestone", "minecraft:stone", "minecraft:clay_ball", "minecraft:brick",
+                "minecraft:granite", "minecraft:andesite", "minecraft:diorite", "minecraft:quartz"));
+        PROF_ITEMS.put("fisherman", List.of("minecraft:cod", "minecraft:salmon", "minecraft:string", "minecraft:stick",
+                "minecraft:kelp"));
+        PROF_ITEMS.put("shepherd", List.of("minecraft:white_wool", "minecraft:string", "minecraft:stick", "minecraft:wheat"));
+        PROF_ITEMS.put("fletcher", List.of("minecraft:stick", "minecraft:feather", "minecraft:flint", "minecraft:string",
+                "minecraft:arrow"));
+        PROF_ITEMS.put("cartographer", List.of("minecraft:paper", "minecraft:glass_pane", "minecraft:ink_sac",
+                "minecraft:feather"));
+    }
+
+    /** Предметы, которые житель данной профессии может попросить. */
+    public static List<String> itemsFor(String profession) {
+        List<String> l = PROF_ITEMS.get(profession);
+        return l != null ? l : GENERIC_ITEMS;
     }
 
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
@@ -64,6 +111,7 @@ public class Quests {
             if (read != null) {
                 LIST.clear();
                 LIST.addAll(read);
+                for (Quest q : LIST) q.live = false;
             }
         } catch (Exception e) {
             MobTalkClient.LOG.error("Quests load error", e);
@@ -80,13 +128,13 @@ public class Quests {
 
     // ---------- описание ----------
 
-    private static String goal(Quest q) {
+    public static String goal(Quest q) {
         if ("FETCH".equals(q.kind))
             return "принести " + q.need + " × " + q.targetName + " (бросить на землю рядом с «" + q.giverName + "»)";
         return "убить " + q.need + " × " + q.targetName + " и вернуться к «" + q.giverName + "»";
     }
 
-    private static String reward(Quest q) {
+    public static String reward(Quest q) {
         if (q.rewardItem.isBlank()) return "без награды, только благодарность";
         Item it = item(q.rewardItem);
         return q.rewardCount + " × " + (it != null ? it.getName().getString() : q.rewardItem);
@@ -115,28 +163,45 @@ public class Quests {
     }
 
     public static synchronized void cancel(UUID giver) {
+        PENDING.remove(giver.toString());
         if (LIST.removeIf(q -> q.giver.equals(giver.toString()))) save();
     }
 
-    // ---------- создание (серверный поток) ----------
+    // ---------- предложение, принятие, отказ ----------
 
-    public static synchronized String create(MinecraftServer srv, UUID giverId, String giverName, String giverType, JsonObject a) {
+    /**
+     * Проверяет и готовит поручение (серверный поток). Поручения даёт только житель, и только по своему ремеслу.
+     * Задание НЕ становится активным: игроку показывается окно, где он принимает или отклоняет предложение.
+     */
+    public static synchronized String prepare(MinecraftServer srv, UUID giverId, String giverName, String giverType, JsonObject a) {
+        if (!"villager".equals(giverType)) return "ERR:Поручения даёт только житель деревни; ты их не даёшь.";
+        MobEntity giver = findMob(srv, giverId);
+        if (giver == null) return "ERR:Не удалось найти заказчика.";
+        if (giver.isBaby()) return "ERR:Ты ещё ребёнок и поручений не даёшь.";
+        if (Reputation.attitude(giverId, giverType) <= -25) return "ERR:Ты не доверяешь игроку и поручений ему не даёшь.";
         if (LIST.size() >= MAX_ACTIVE) return "ERR:У игрока уже слишком много активных заданий.";
         for (Quest x : LIST)
             if (x.giver.equals(giverId.toString())) return "ERR:От тебя уже есть незавершённое задание.";
+        if (PENDING.containsKey(giverId.toString())) return "ERR:Ты уже предложил поручение, ждёшь ответа игрока.";
 
+        String prof = Personalities.professionOf(giver);
         Quest q = new Quest();
         q.giver = giverId.toString();
         q.giverName = giverName;
         q.giverType = giverType;
+        q.profession = prof;
         q.kind = str(a, "kind").toUpperCase(Locale.ROOT);
         q.title = str(a, "title").isBlank() ? "Поручение" : str(a, "title");
 
         if ("FETCH".equals(q.kind)) {
             Item it = item(str(a, "item"));
             if (it == null) return "ERR:Неизвестный предмет «" + str(a, "item") + "».";
-            q.need = Math.max(1, Math.min(num(a, "count"), 128));
-            q.target = Registries.ITEM.getId(it).toString();
+            String id = Registries.ITEM.getId(it).toString();
+            List<String> allowed = itemsFor(prof);
+            if (!allowed.contains(id))
+                return "ERR:По твоему ремеслу ты можешь просить только: " + String.join(", ", allowed) + ".";
+            q.need = Math.max(1, Math.min(num(a, "count"), 64));
+            q.target = id;
             q.targetName = it.getName().getString();
         } else if ("KILL".equals(q.kind)) {
             EntityType<?> t = entityType(str(a, "target"));
@@ -156,9 +221,121 @@ public class Quests {
             q.rewardItem = Registries.ITEM.getId(r).toString();
             q.rewardCount = Math.min(rc, r.getMaxCount());
         }
+        q.x = giver.getX();
+        q.y = giver.getY();
+        q.z = giver.getZ();
+        q.dim = giver.getWorld().getRegistryKey().getValue().toString();
+        q.live = true;
+        PENDING.put(q.giver, q);
+        return "OK:«" + q.title + "» — " + goal(q) + "; награда: " + reward(q) + ".";
+    }
+
+    public static synchronized Quest pendingFor(UUID giver) {
+        return PENDING.get(giver.toString());
+    }
+
+    /** Игрок принял предложение. */
+    public static synchronized boolean accept(UUID giver) {
+        Quest q = PENDING.remove(giver.toString());
+        if (q == null || LIST.size() >= MAX_ACTIVE) return false;
         LIST.add(q);
         save();
-        return "OK:«" + q.title + "» — " + goal(q) + "; награда: " + reward(q) + ".";
+        Memory.add(giver, "user", "[Система] Игрок ПРИНЯЛ твоё задание «" + q.title + "».");
+        return true;
+    }
+
+    /** Игрок отказался (или закрыл окно). */
+    public static synchronized void decline(UUID giver) {
+        Quest q = PENDING.remove(giver.toString());
+        if (q != null)
+            Memory.add(giver, "user", "[Система] Игрок отказался от твоего задания «" + q.title
+                    + "». Не обижайся и не предлагай его снова сразу.");
+    }
+
+    /** Игрок отказался от уже принятого задания (окно заданий). */
+    public static synchronized boolean abandon(String giver) {
+        Quest hit = null;
+        for (Quest q : LIST) if (q.giver.equals(giver)) hit = q;
+        if (hit == null) return false;
+        LIST.remove(hit);
+        save();
+        try {
+            Memory.add(UUID.fromString(giver), "user", "[Система] Игрок отказался от твоего задания «" + hit.title + "».");
+        } catch (Exception ignored) {
+        }
+        return true;
+    }
+
+    public static synchronized List<Quest> snapshot() {
+        return new ArrayList<>(LIST);
+    }
+
+    /** Сколько нужных предметов у игрока в инвентаре (для FETCH). */
+    public static int have(PlayerEntity p, Quest q) {
+        if (!"FETCH".equals(q.kind)) return 0;
+        Item it = item(q.target);
+        if (it == null) return 0;
+        PlayerInventory inv = p.getInventory();
+        int n = 0;
+        for (int i = 0; i < inv.size(); i++) {
+            ItemStack s = inv.getStack(i);
+            if (s.isOf(it)) n += s.getCount();
+        }
+        return n;
+    }
+
+    // ---------- сдача через окно заданий (серверный поток) ----------
+
+    public static String handIn(ServerPlayerEntity sp, String giver) {
+        Quest q = null;
+        synchronized (Quests.class) {
+            for (Quest x : LIST) if (x.giver.equals(giver)) q = x;
+        }
+        if (q == null) return "§cЗадание не найдено.";
+        if ("FETCH".equals(q.kind)) {
+            Item take = item(q.target);
+            if (take == null) return "§cНеизвестный предмет задания.";
+            int need = q.need - q.progress, got = 0;
+            PlayerInventory inv = sp.getInventory();
+            for (int i = 0; i < inv.size() && got < need; i++) {
+                ItemStack s = inv.getStack(i);
+                if (!s.isOf(take)) continue;
+                int n = Math.min(need - got, s.getCount());
+                s.decrement(n);
+                got += n;
+            }
+            if (got == 0) return "§cУ вас нет нужных предметов: " + q.targetName + ".";
+            synchronized (Quests.class) {
+                q.progress += got;
+                save();
+            }
+            if (q.progress < q.need)
+                return "§7[Сдано " + got + " × " + q.targetName + ": " + q.progress + "/" + q.need + "]";
+        } else if (!q.ready) {
+            return "§cЗадание ещё не выполнено: " + q.progress + "/" + q.need + ".";
+        }
+        return finishRemote(sp, q);
+    }
+
+    private static String finishRemote(ServerPlayerEntity sp, Quest q) {
+        synchronized (Quests.class) {
+            if (!LIST.remove(q)) return "§cЗадание уже сдано.";
+            save();
+        }
+        if (!q.rewardItem.isBlank()) {
+            Item r = item(q.rewardItem);
+            if (r != null) sp.getInventory().offerOrDrop(new ItemStack(r, q.rewardCount));
+        }
+        UUID gid = UUID.fromString(q.giver);
+        State.addPersonal(gid, 10);
+        Reputation.addFaction(q.giverType, 3);
+        Reputation.record(q.giverType, q.giverName, 10, 3, "выполнено задание «" + q.title + "»",
+                sp.getWorld().getTimeOfDay());
+        int after = Reputation.attitude(gid, q.giverType);
+        Memory.add(gid, "user", "[Система] Игрок выполнил твоё задание «" + q.title + "» и получил награду.");
+        return "§a[Задание «" + q.title + "» сдано] " + q.giverName
+                + (q.rewardItem.isBlank() ? " благодарит вас" : ": награда в инвентаре — " + reward(q))
+                + " §7(отношение +10 · " + Reputation.tier(after) + ")";
     }
 
     // ---------- прогресс ----------
@@ -192,7 +369,15 @@ public class Quests {
         }
         for (Quest q : snapshot) {
             MobEntity giver = findMob(srv, UUID.fromString(q.giver));
-            if (giver == null || !(giver.getWorld() instanceof ServerWorld w)) continue;
+            if (giver == null || !(giver.getWorld() instanceof ServerWorld w)) {
+                q.live = false; // заказчик не загружен: остаются последние известные координаты
+                continue;
+            }
+            q.x = giver.getX();
+            q.y = giver.getY();
+            q.z = giver.getZ();
+            q.dim = w.getRegistryKey().getValue().toString();
+            q.live = true;
 
             if ("FETCH".equals(q.kind) && !q.ready) {
                 Item take = item(q.target);
@@ -252,7 +437,7 @@ public class Quests {
         return null;
     }
 
-    private static Item item(String id) {
+    public static Item item(String id) {
         Identifier ident = Identifier.tryParse(id);
         if (ident == null) return null;
         Item it = Registries.ITEM.getOrEmpty(ident).orElse(null);

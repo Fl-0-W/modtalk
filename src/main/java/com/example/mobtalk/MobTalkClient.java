@@ -46,6 +46,17 @@ public class MobTalkClient implements ClientModInitializer {
     private static KeyBinding talkKey;
     private static KeyBinding repKey;
     private static KeyBinding windowKey;
+    private static KeyBinding questKey;
+
+    /** Предложения поручений, ожидающие показа окна «принять / отказаться». */
+    private record Offer(UUID giver, long at) {}
+
+    private static final Queue<Offer> OFFERS = new ConcurrentLinkedQueue<>();
+
+    /** Вызывается после того, как житель предложил поручение: окно появится через пару секунд. */
+    static void offerQuest(UUID giver) {
+        OFFERS.add(new Offer(giver, System.currentTimeMillis() + 3500));
+    }
 
     // --- временные номера над головами одинаковых мобов ---
     private static final long TAG_MS = 15000;
@@ -104,6 +115,9 @@ public class MobTalkClient implements ClientModInitializer {
         windowKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.mobtalk.window", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, "category.mobtalk"));
 
+        questKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.mobtalk.quests", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_N, "category.mobtalk"));
+
         ClientTickEvents.END_CLIENT_TICK.register(MobTalkClient::clientTick);
         ServerTickEvents.END_SERVER_TICK.register(MobTalkClient::serverTick);
 
@@ -156,6 +170,10 @@ public class MobTalkClient implements ClientModInitializer {
         while (windowKey.wasPressed()) {
             if (mc.currentScreen == null) mc.setScreen(new ReputationScreen());
         }
+        while (questKey.wasPressed()) {
+            if (mc.currentScreen == null) mc.setScreen(new QuestScreen());
+        }
+        showOffers(mc);
         expireTags(mc);
         spontaneousTick(mc);
 
@@ -226,7 +244,7 @@ public class MobTalkClient implements ClientModInitializer {
         String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
         boolean hostile = Personalities.isHostile(type, e instanceof HostileEntity);
         return new Brain.Mob(e.getUuid(), type, label, hostile,
-                e.distanceTo(mc.player), Personalities.persona(e), e.isBaby());
+                e.distanceTo(mc.player), Personalities.persona(e), e.isBaby(), Personalities.professionOf(e));
     }
 
     private static List<Brain.Mob> nearbyMobs(MinecraftClient mc, int max) {
@@ -244,6 +262,22 @@ public class MobTalkClient implements ClientModInitializer {
         List<Brain.Mob> out = new ArrayList<>();
         for (MobEntity e : picked) out.add(toMob(e, mc, labels.get(e.getUuid())));
         return out;
+    }
+
+    static boolean isQuestKey(int keyCode, int scanCode) {
+        return questKey != null && questKey.matchesKey(keyCode, scanCode);
+    }
+
+    private static void showOffers(MinecraftClient mc) {
+        Offer o = OFFERS.peek();
+        if (o == null) return;
+        if (Quests.pendingFor(o.giver()) == null) { // уже не актуально
+            OFFERS.poll();
+            return;
+        }
+        if (System.currentTimeMillis() < o.at() || mc.currentScreen != null || recording) return;
+        OFFERS.poll();
+        mc.setScreen(new QuestOfferScreen(Quests.pendingFor(o.giver()), o.giver()));
     }
 
     static boolean isWindowKey(int keyCode, int scanCode) {
@@ -377,7 +411,7 @@ public class MobTalkClient implements ClientModInitializer {
         EVENTS.removeIf(e -> now - e.time() > 20000);
 
         boolean free = !recording && !busy && !ambientBusy && c.apiKey != null && !c.apiKey.isBlank();
-        if (!free || now - lastSpontaneous < 12000) {
+        if (!free || now - lastSpontaneous < 24000) {
             greetTimer = 0;
             return;
         }
@@ -428,11 +462,11 @@ public class MobTalkClient implements ClientModInitializer {
 
     private static long cooldownMs(String type) {
         return switch (type) {
-            case "NIGHT", "MORNING" -> 120_000L;
-            case "RAIN", "STORM" -> 90_000L;
-            case "HURT" -> 45_000L;
-            case "RAID", "RAID_END" -> 60_000L;
-            default -> 30_000L; // DEATH
+            case "NIGHT", "MORNING" -> 240_000L;
+            case "RAIN", "STORM" -> 180_000L;
+            case "HURT" -> 90_000L;
+            case "RAID", "RAID_END" -> 120_000L;
+            default -> 60_000L; // DEATH
         };
     }
 

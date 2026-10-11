@@ -2,5 +2,6 @@
   "key.mobtalk.talk": "Talk to mobs (hold)",
   "key.mobtalk.rep": "Reputation and quests",
   "category.mobtalk": "MobTalk",
-  "key.mobtalk.window": "Reputation window"
+  "key.mobtalk.window": "Reputation window",
+  "key.mobtalk.quests": "Quests window"
 }
