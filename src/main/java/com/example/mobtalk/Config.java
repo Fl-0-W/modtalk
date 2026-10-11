@@ -23,6 +23,10 @@ public class Config {
     public String language = "ru";
     public int maxHistory = 24;
     public boolean jsonMode = true;
+    /** Живость и разнообразие реплик: температура и штрафы за повторы (0 — не отправлять). */
+    public double chatTemperature = 1.0;
+    public double frequencyPenalty = 0.5;
+    public double presencePenalty = 0.4;
     public int configVersion = 0;
 
     /** "openai" (по умолчанию) или "elevenlabs" — самый живой русский голос. */

@@ -47,11 +47,15 @@ public class Api {
         return JsonParser.parseString(r.body()).getAsJsonObject().get("text").getAsString().trim();
     }
 
+    private static volatile boolean penalties = true;
+
     public static String chat(String system, List<Memory.Msg> history) throws Exception {
         Config c = Config.INSTANCE;
         JsonObject body = new JsonObject();
         body.addProperty("model", c.chatModel);
-        body.addProperty("temperature", 0.9);
+        body.addProperty("temperature", c.chatTemperature);
+        if (penalties && c.frequencyPenalty != 0) body.addProperty("frequency_penalty", c.frequencyPenalty);
+        if (penalties && c.presencePenalty != 0) body.addProperty("presence_penalty", c.presencePenalty);
         body.addProperty("max_tokens", 350);
         if (c.jsonMode) {
             JsonObject rf = new JsonObject();
@@ -70,6 +74,10 @@ public class Api {
                 .POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8))
                 .build();
         HttpResponse<String> r = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+        if (r.statusCode() == 400 && penalties && r.body().toLowerCase().contains("penalty")) {
+            penalties = false; // провайдер не знает штрафов за повторы — дальше без них
+            return chat(system, history);
+        }
         check(r.statusCode(), r.body());
         return JsonParser.parseString(r.body()).getAsJsonObject()
                 .getAsJsonArray("choices").get(0).getAsJsonObject()

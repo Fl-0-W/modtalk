@@ -372,7 +372,10 @@ public class MobTalkClient implements ClientModInitializer {
         t.num = n;
         t.entity = e;
         t.expires = System.currentTimeMillis() + TAG_MS;
-        e.setCustomName(Text.literal("§e§l№" + n));
+        e.setCustomName(Text.literal("\u2039 ").setStyle(net.minecraft.text.Style.EMPTY.withColor(0x5E7C8C))
+                .append(Text.literal("№").setStyle(net.minecraft.text.Style.EMPTY.withColor(0x8FD3E8)))
+                .append(Text.literal(String.valueOf(n)).setStyle(net.minecraft.text.Style.EMPTY.withColor(0xFFFFFF)))
+                .append(Text.literal(" \u203A").setStyle(net.minecraft.text.Style.EMPTY.withColor(0x5E7C8C))));
         e.setCustomNameVisible(true);
     }
 

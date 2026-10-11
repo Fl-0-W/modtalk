@@ -124,6 +124,17 @@ public class Brain {
         List<Memory.Msg> hist = Memory.get(m.id());
         hist.add(new Memory.Msg("user", userContent));
         Reply r = parse(Api.chat(system, hist));
+        if (Variety.tooSimilar(m.id(), r.say())) { // слишком похоже на недавнее — просим сказать иначе (один раз)
+            List<Memory.Msg> retry = new ArrayList<>(hist);
+            retry.add(new Memory.Msg("assistant", r.raw()));
+            retry.add(new Memory.Msg("user", "[Система] Эта реплика слишком похожа на уже сказанное. Скажи то же по смыслу "
+                    + "или о другом, но совершенно другими словами и с другого захода. Формат ответа прежний (JSON)."));
+            try {
+                Reply r2 = parse(Api.chat(system, retry));
+                if (!r2.say().isBlank()) r = r2;
+            } catch (Exception ignored) {
+            }
+        }
         Memory.add(m.id(), "user", userContent);
         Memory.add(m.id(), "assistant", r.raw());
         maybeCompress(m);
@@ -354,6 +365,7 @@ public class Brain {
 
     static void say(MinecraftClient mc, Mob m, String text, double gain, String toName, boolean reportErr) {
         MobTalkClient.refreshTag(m.id()); // номер над головой держится, пока моб говорит
+        Variety.remember(m.id(), text);
         MobTalkClient.chat(mc, "§e" + m.name() + (toName != null ? "§7 → " + toName : "") + "§f: " + text);
 
         Config c = Config.INSTANCE;

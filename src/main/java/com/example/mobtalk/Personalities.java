@@ -358,6 +358,7 @@ public class Personalities {
             sb.append("\nРядом с тобой также: ").append(String.join(", ", neighbors)).append(". ");
         if (actions && p.trader() && inventory != null)
             sb.append("\nВещи игрока: ").append(inventory).append(". ");
+        sb.append(Variety.prompt(m.id()));
         return sb.toString();
     }
 }
