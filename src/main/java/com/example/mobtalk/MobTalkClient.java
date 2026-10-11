@@ -128,7 +128,29 @@ public class MobTalkClient implements ClientModInitializer {
 
     // ---------- ввод ----------
 
+    private static boolean keysChecked;
+
+    /** Освобождает P: ванильное «Социальное взаимодействие» перехватывало нажатие у окна репутации. */
+    private static void freeWindowKey(MinecraftClient mc) {
+        try {
+            if (!Config.INSTANCE.unbindSocialKey || mc.options == null || windowKey == null) return;
+            KeyBinding social = mc.options.socialInteractionsKey;
+            if (social != null && social != windowKey && windowKey.equals(social)) {
+                social.setBoundKey(InputUtil.UNKNOWN_KEY);
+                KeyBinding.updateKeysByCode();
+                mc.options.write();
+                LOG.info("MobTalk: key P freed from vanilla Social Interactions");
+            }
+        } catch (Throwable t) {
+            LOG.warn("Could not free window key: {}", t.toString());
+        }
+    }
+
     private static void clientTick(MinecraftClient mc) {
+        if (!keysChecked) {
+            keysChecked = true;
+            freeWindowKey(mc);
+        }
         if (mc.player == null || mc.world == null) return;
         while (repKey.wasPressed()) Reputation.show(mc);
         while (windowKey.wasPressed()) {
