@@ -22,7 +22,7 @@ import java.util.function.Function;
 /** Вся логика разговора: сцена, репутация, действия, поручения, память, озвучка. */
 public class Brain {
     public record Mob(UUID id, String type, String name, boolean hostile, double dist, String persona, boolean baby,
-                      String profession) {}
+                      String profession, int entityId) {}
 
     public record Scene(List<Mob> mobs, String inventory, String context, String playerName, UUID playerId) {}
 
@@ -402,15 +402,17 @@ public class Brain {
             }
         }, MobTalkClient.TTS);
 
-        final float g = (float) gain;
+        final MobTalkClient.Speaker speaker = MobTalkClient.beginSpeaking(m.entityId(), m.dist());
         MobTalkClient.PLAYER.submit(() -> {
             try {
                 byte[] pcm = f.get(90, TimeUnit.SECONDS);
                 if (pcm != null) {
                     if (!yandex && Math.abs(pitch - 1.0) > 0.01) pcm = Mic.resample(pcm, pitch); // Яндекс сдвигает сам
-                    Mic.play(pcm, g);
+                    Mic.playSpatial(pcm, speaker); // громкость зависит от расстояния до говорящего
                 }
             } catch (Exception ignored) {
+            } finally {
+                MobTalkClient.endSpeaking(speaker);
             }
         });
     }

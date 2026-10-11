@@ -56,6 +56,15 @@ public class Config {
      * локальный сдвиг (±6%).
      */
     public boolean yandexNativePitch = true;
+
+    /** Пиксельный шрифт в окнах мода. Если в игре текст выглядит плохо — поставь false (будет обычный шрифт). */
+    public boolean uiFont = true;
+
+    /** Слышимость речи по расстоянию: до fullVolumeRadius блоков — полная громкость, к hearRadius — тишина. */
+    public double fullVolumeRadius = 4.0;
+    public double hearRadius = 24.0;
+    /** Вдали голос ещё и «глохнет» (приглушаются высокие частоты). */
+    public boolean distanceMuffle = true;
     /** Насколько вид может отличаться по высоте от обычного голоса (0.15 = ±15%). Меньше — естественнее. */
     public double maxPitchShift = 0.15;
 

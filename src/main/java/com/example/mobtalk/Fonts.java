@@ -11,18 +11,17 @@ import java.util.List;
 
 /**
  * Шрифт окон мода: пиксельный Pixelify Sans (SIL OFL) с кириллицей, лежит в assets/mobtalk/font.
- * Цветовые коды «§» в строках работают как обычно. Чтобы вернуть ванильный шрифт, поставьте USE_CUSTOM = false.
+ * Цветовые коды «§» в строках работают как обычно. Отключается в config/mobtalk.json: "uiFont": false.
  */
 public final class Fonts {
     private Fonts() {}
 
-    public static final boolean USE_CUSTOM = true;
     public static final Identifier UI = new Identifier("mobtalk", "ui");
 
     /** Текст шрифтом мода. */
     public static Text ui(String s) {
         Text t = Text.literal(s);
-        return USE_CUSTOM ? ((net.minecraft.text.MutableText) t).setStyle(Style.EMPTY.withFont(UI)) : t;
+        return Config.INSTANCE.uiFont ? ((net.minecraft.text.MutableText) t).setStyle(Style.EMPTY.withFont(UI)) : t;
     }
 
     public static List<OrderedText> wrap(TextRenderer tr, String s, int width) {

@@ -48,6 +48,37 @@ public class MobTalkClient implements ClientModInitializer {
     private static KeyBinding windowKey;
     private static KeyBinding questKey;
 
+    /** Говорящий моб: расстояние до игрока обновляется каждый тик, звук читает его при воспроизведении. */
+    static final class Speaker {
+        final int entityId;
+        volatile double dist;
+
+        Speaker(int entityId, double dist) {
+            this.entityId = entityId;
+            this.dist = dist;
+        }
+    }
+
+    private static final Set<Speaker> SPEAKERS = ConcurrentHashMap.newKeySet();
+
+    static Speaker beginSpeaking(int entityId, double dist) {
+        Speaker s = new Speaker(entityId, dist);
+        SPEAKERS.add(s);
+        return s;
+    }
+
+    static void endSpeaking(Speaker s) {
+        SPEAKERS.remove(s);
+    }
+
+    private static void trackSpeakers(MinecraftClient mc) {
+        if (SPEAKERS.isEmpty() || mc.world == null || mc.player == null) return;
+        for (Speaker s : SPEAKERS) {
+            Entity e = mc.world.getEntityById(s.entityId);
+            if (e != null) s.dist = e.distanceTo(mc.player);
+        }
+    }
+
     /** Предложения поручений, ожидающие показа окна «принять / отказаться». */
     private record Offer(UUID giver, long at) {}
 
@@ -174,6 +205,7 @@ public class MobTalkClient implements ClientModInitializer {
             if (mc.currentScreen == null) mc.setScreen(new QuestScreen());
         }
         showOffers(mc);
+        trackSpeakers(mc);
         expireTags(mc);
         spontaneousTick(mc);
 
@@ -244,7 +276,7 @@ public class MobTalkClient implements ClientModInitializer {
         String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
         boolean hostile = Personalities.isHostile(type, e instanceof HostileEntity);
         return new Brain.Mob(e.getUuid(), type, label, hostile,
-                e.distanceTo(mc.player), Personalities.persona(e), e.isBaby(), Personalities.professionOf(e));
+                e.distanceTo(mc.player), Personalities.persona(e), e.isBaby(), Personalities.professionOf(e), e.getId());
     }
 
     private static List<Brain.Mob> nearbyMobs(MinecraftClient mc, int max) {

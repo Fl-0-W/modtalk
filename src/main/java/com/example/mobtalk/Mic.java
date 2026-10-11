@@ -98,6 +98,47 @@ public class Mic {
         return out;
     }
 
+    /**
+     * Воспроизведение с учётом расстояния до говорящего: громкость и «чистота» голоса пересчитываются каждые 20 мс
+     * по текущему расстоянию, поэтому если отойти, голос затихает и глохнет прямо во время фразы.
+     */
+    public static void playSpatial(byte[] pcm, MobTalkClient.Speaker sp) {
+        Config c = Config.INSTANCE;
+        double full = Math.max(0.5, c.fullVolumeRadius);
+        double hear = Math.max(full + 1.0, c.hearRadius);
+        final int chunk = 960; // 480 отсчётов = 20 мс при 24 кГц
+        try (SourceDataLine sdl = AudioSystem.getSourceDataLine(PLAY)) {
+            sdl.open(PLAY);
+            sdl.start();
+            double prevGain = -1, lp = 0;
+            for (int off = 0; off + 1 < pcm.length; off += chunk) {
+                int len = Math.min(chunk, pcm.length - off);
+                len -= len % 2;
+                if (len <= 0) break;
+                double t = Math.max(0.0, Math.min(1.0, (sp.dist - full) / (hear - full)));
+                double gain = (1.0 - t) * (1.0 - t);
+                double alpha = c.distanceMuffle ? 1.0 - 0.82 * Math.pow(t, 0.7) : 1.0;
+                if (prevGain < 0) prevGain = gain;
+                int n = len / 2;
+                byte[] out = new byte[len];
+                for (int i = 0; i < n; i++) {
+                    double x = (short) ((pcm[off + 2 * i] & 0xFF) | (pcm[off + 2 * i + 1] << 8));
+                    lp += alpha * (x - lp);
+                    double g = prevGain + (gain - prevGain) * (i + 1) / n;
+                    int v = (int) Math.round(lp * g);
+                    v = Math.max(-32768, Math.min(32767, v));
+                    out[2 * i] = (byte) v;
+                    out[2 * i + 1] = (byte) (v >> 8);
+                }
+                prevGain = gain;
+                sdl.write(out, 0, len);
+            }
+            sdl.drain();
+        } catch (Exception e) {
+            MobTalkClient.LOG.error("Playback error", e);
+        }
+    }
+
     public static void play(byte[] pcm, float gain) {
         if (gain < 0.99f) {
             for (int i = 0; i + 1 < pcm.length; i += 2) {

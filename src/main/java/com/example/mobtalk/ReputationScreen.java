@@ -16,8 +16,8 @@ import java.util.Map;
  */
 public class ReputationScreen extends Screen {
     private static final int LEFT_W = 132;
-    private static final int ROW_H = 24;
-    private static final int LINE_H = 11;
+    private static final int ROW_H = 30;
+    private static final int LINE_H = 13;
 
     private final List<String> factions = new ArrayList<>();
     private String selected;
@@ -120,11 +120,11 @@ public class ReputationScreen extends Screen {
     }
 
     private int histTop() {
-        return y0 + 22 + head.size() * LINE_H + 2;
+        return y0 + 24 + head.size() * LINE_H + 4;
     }
 
     private int histVisible() {
-        return Math.max(1, (y0 + h - 16 - histTop()) / LINE_H);
+        return Math.max(1, (y0 + h - 18 - histTop()) / LINE_H);
     }
 
     private int maxHistScroll() {
@@ -158,15 +158,15 @@ public class ReputationScreen extends Screen {
             if (f.equals(selected)) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x50FFFFFF);
             else if (mouseX >= x0 + 4 && mouseX < x0 + LEFT_W && mouseY >= ry && mouseY < ry + ROW_H - 2
                     && mouseY >= lt && mouseY < lt + lh) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x25FFFFFF);
-            ctx.drawText(textRenderer, Fonts.fit(textRenderer, Reputation.factionName(f), LEFT_W - 14), x0 + 8, ry + 3, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, Reputation.factionName(f), LEFT_W - 14), x0 + 8, ry + 5, 0xFFFFFF, false);
             ctx.drawText(textRenderer, Fonts.ui(Reputation.color(rep) + Reputation.fmt(rep) + " §7" + Reputation.tier(rep)),
-                    x0 + 8, ry + 13, 0xFFFFFF, false);
+                    x0 + 8, ry + 17, 0xFFFFFF, false);
         }
         ctx.disableScissor();
 
         // правая часть: подробности и журнал
         int rx = x0 + LEFT_W + 10;
-        int y = y0 + 22;
+        int y = y0 + 24;
         for (OrderedText line : head) {
             ctx.drawText(textRenderer, line, rx, y, 0xFFFFFF, false);
             y += LINE_H;

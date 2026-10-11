@@ -20,8 +20,8 @@ import java.util.UUID;
  */
 public class QuestScreen extends Screen {
     private static final int LEFT_W = 140;
-    private static final int ROW_H = 26;
-    private static final int LINE_H = 11;
+    private static final int ROW_H = 32;
+    private static final int LINE_H = 13;
     private static final String[] DIRS = {"север", "северо-восток", "восток", "юго-восток", "юг", "юго-запад", "запад",
             "северо-запад"};
 
@@ -140,9 +140,9 @@ public class QuestScreen extends Screen {
             int ry = lt + i * ROW_H - leftScroll;
             if (ry + ROW_H < lt || ry > lt + lh) continue;
             if (q.giver.equals(selected)) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x50FFFFFF);
-            ctx.drawText(textRenderer, Fonts.fit(textRenderer, "§e" + q.title, LEFT_W - 14), x0 + 8, ry + 3, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, "§e" + q.title, LEFT_W - 14), x0 + 8, ry + 5, 0xFFFFFF, false);
             String sub = "§7" + q.giverName + (q.ready || q.progress >= q.need ? " §aготово" : " " + q.progress + "/" + q.need);
-            ctx.drawText(textRenderer, Fonts.fit(textRenderer, sub, LEFT_W - 14), x0 + 8, ry + 14, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, sub, LEFT_W - 14), x0 + 8, ry + 18, 0xFFFFFF, false);
         }
         ctx.disableScissor();
 

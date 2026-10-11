@@ -33,7 +33,7 @@ public class QuestOfferScreen extends Screen {
         lines.addAll(Fonts.wrap(textRenderer, "§7Задание: §f" + Quests.goal(quest), inner));
         lines.addAll(Fonts.wrap(textRenderer, "§7Награда: §a" + Quests.reward(quest), inner));
         lines.addAll(Fonts.wrap(textRenderer, "§8Принятые задания видны в окне заданий (N / Т).", inner));
-        h = 44 + lines.size() * 12 + 34;
+        h = 44 + lines.size() * 14 + 34;
         x0 = (width - w) / 2;
         y0 = (height - h) / 2;
 
@@ -80,7 +80,7 @@ public class QuestOfferScreen extends Screen {
         int y = y0 + 26;
         for (OrderedText l : lines) {
             ctx.drawText(textRenderer, l, x0 + 12, y, 0xFFFFFF, false);
-            y += 12;
+            y += 14;
         }
         super.render(ctx, mouseX, mouseY, delta);
     }
