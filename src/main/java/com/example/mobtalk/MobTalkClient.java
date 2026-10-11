@@ -117,7 +117,7 @@ public class MobTalkClient implements ClientModInitializer {
     private static final Set<UUID> NEAR = new HashSet<>();
     private static boolean nearSeeded;
     private static Object lastWorld;
-    private static net.minecraft.client.world.ClientWorld lastWorld;
+    private static Object stateWorld; // для Worlds.enter
     private static long lastSpontaneous;
     private static int greetTimer;
     private static long prevDayTime = -1;
@@ -196,8 +196,8 @@ public class MobTalkClient implements ClientModInitializer {
             freeWindowKey(mc);
         }
         if (mc.player == null || mc.world == null) return;
-        if (mc.world != lastWorld) { // зашли в мир (или сменили измерение): подгрузить состояние именно этого мира
-            lastWorld = mc.world;
+        if (mc.world != stateWorld) { // зашли в мир (или сменили измерение): подгрузить состояние именно этого мира
+            stateWorld = mc.world;
             Worlds.enter(mc);
         }
         while (repKey.wasPressed()) Reputation.show(mc);
