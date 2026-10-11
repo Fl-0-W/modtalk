@@ -27,6 +27,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.util.*;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -44,6 +45,20 @@ public class MobTalkClient implements ClientModInitializer {
     private static final Random RNG = new Random();
     private static KeyBinding talkKey;
     private static KeyBinding repKey;
+    private static KeyBinding windowKey;
+
+    // --- временные номера над головами одинаковых мобов ---
+    private static final long TAG_MS = 15000;
+
+    private static final class Tag {
+        int num;
+        volatile long expires;
+        Text oldName;
+        boolean oldVisible;
+        MobEntity entity;
+    }
+
+    private static final Map<UUID, Tag> TAGS = new ConcurrentHashMap<>();
 
     private static volatile boolean busy;
     private static volatile boolean ambientBusy;
@@ -86,6 +101,9 @@ public class MobTalkClient implements ClientModInitializer {
         repKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
                 "key.mobtalk.rep", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_H, "category.mobtalk"));
 
+        windowKey = KeyBindingHelper.registerKeyBinding(new KeyBinding(
+                "key.mobtalk.window", InputUtil.Type.KEYSYM, GLFW.GLFW_KEY_P, "category.mobtalk"));
+
         ClientTickEvents.END_CLIENT_TICK.register(MobTalkClient::clientTick);
         ServerTickEvents.END_SERVER_TICK.register(MobTalkClient::serverTick);
 
@@ -113,6 +131,10 @@ public class MobTalkClient implements ClientModInitializer {
     private static void clientTick(MinecraftClient mc) {
         if (mc.player == null || mc.world == null) return;
         while (repKey.wasPressed()) Reputation.show(mc);
+        while (windowKey.wasPressed()) {
+            if (mc.currentScreen == null) mc.setScreen(new ReputationScreen());
+        }
+        expireTags(mc);
         spontaneousTick(mc);
 
         boolean down = talkKey.isPressed();
@@ -175,9 +197,13 @@ public class MobTalkClient implements ClientModInitializer {
     // ---------- сцена ----------
 
     private static Brain.Mob toMob(MobEntity e, MinecraftClient mc) {
+        return toMob(e, mc, Personalities.displayName(e));
+    }
+
+    private static Brain.Mob toMob(MobEntity e, MinecraftClient mc, String label) {
         String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
         boolean hostile = Personalities.isHostile(type, e instanceof HostileEntity);
-        return new Brain.Mob(e.getUuid(), type, Personalities.displayName(e), hostile,
+        return new Brain.Mob(e.getUuid(), type, label, hostile,
                 e.distanceTo(mc.player), Personalities.persona(e), e.isBaby());
     }
 
@@ -186,22 +212,101 @@ public class MobTalkClient implements ClientModInitializer {
         List<MobEntity> list = mc.world.getEntitiesByClass(MobEntity.class,
                 mc.player.getBoundingBox().expand(r), e -> e.isAlive() && e.distanceTo(mc.player) <= r);
         list.sort(Comparator.comparingDouble((MobEntity e) -> e.distanceTo(mc.player)));
-        List<Brain.Mob> out = new ArrayList<>();
+        List<MobEntity> picked = new ArrayList<>();
         for (MobEntity e : list) {
-            if (out.size() >= max) break;
-            out.add(toMob(e, mc));
+            if (picked.size() >= max) break;
+            picked.add(e);
         }
-        // одинаковые подписи («Корова», «Корова») различаем номерами, чтобы мобы не путались друг с другом
-        Map<String, Integer> total = new HashMap<>(), seen = new HashMap<>();
-        for (Brain.Mob m : out) total.merge(m.name(), 1, Integer::sum);
-        for (int i = 0; i < out.size(); i++) {
-            Brain.Mob m = out.get(i);
-            if (total.get(m.name()) > 1) {
-                int n = seen.merge(m.name(), 1, Integer::sum);
-                out.set(i, new Brain.Mob(m.id(), m.type(), m.name() + " №" + n, m.hostile(), m.dist(), m.persona(), m.baby()));
+        // одинаковые подписи получают стабильные номера, которые высвечиваются над головами
+        Map<UUID, String> labels = labelAll(picked, true);
+        List<Brain.Mob> out = new ArrayList<>();
+        for (MobEntity e : picked) out.add(toMob(e, mc, labels.get(e.getUuid())));
+        return out;
+    }
+
+    static boolean isWindowKey(int keyCode, int scanCode) {
+        return windowKey != null && windowKey.matchesKey(keyCode, scanCode);
+    }
+
+    // ---------- номера одинаковых мобов ----------
+
+    /** Настоящее имя моба (name tag) без нашей временной метки с номером. */
+    static Text realCustomName(Entity e) {
+        Tag t = TAGS.get(e.getUuid());
+        return t != null ? t.oldName : e.getCustomName();
+    }
+
+    /**
+     * Подписи для набора мобов: одинаковые («Корова», «Корова») получают номера «Корова №1», «Корова №2».
+     * Номера стабильны, пока над головами висят метки. При tag = true номера высвечиваются над головами на 15 секунд.
+     */
+    static Map<UUID, String> labelAll(List<MobEntity> ents, boolean tag) {
+        Map<UUID, String> out = new HashMap<>();
+        Map<String, List<MobEntity>> groups = new LinkedHashMap<>();
+        for (MobEntity e : ents) groups.computeIfAbsent(Personalities.displayName(e), k -> new ArrayList<>()).add(e);
+        long now = System.currentTimeMillis();
+        for (Map.Entry<String, List<MobEntity>> g : groups.entrySet()) {
+            List<MobEntity> list = g.getValue();
+            if (list.size() == 1) {
+                out.put(list.get(0).getUuid(), g.getKey());
+                continue;
+            }
+            Set<Integer> used = new HashSet<>();
+            Map<UUID, Integer> nums = new HashMap<>();
+            for (MobEntity e : list) { // у кого номер уже висит над головой — сохраняем его
+                Tag t = TAGS.get(e.getUuid());
+                if (t != null && t.expires > now && used.add(t.num)) nums.put(e.getUuid(), t.num);
+            }
+            int next = 1;
+            for (MobEntity e : list) {
+                if (nums.containsKey(e.getUuid())) continue;
+                while (used.contains(next)) next++;
+                used.add(next);
+                nums.put(e.getUuid(), next);
+            }
+            for (MobEntity e : list) {
+                int n = nums.get(e.getUuid());
+                out.put(e.getUuid(), g.getKey() + " №" + n);
+                if (tag) setTag(e, n);
             }
         }
         return out;
+    }
+
+    private static void setTag(MobEntity e, int n) {
+        Tag t = TAGS.get(e.getUuid());
+        if (t == null) {
+            t = new Tag();
+            t.oldName = e.getCustomName();
+            t.oldVisible = e.isCustomNameVisible();
+            TAGS.put(e.getUuid(), t);
+        }
+        t.num = n;
+        t.entity = e;
+        t.expires = System.currentTimeMillis() + TAG_MS;
+        e.setCustomName(Text.literal("§e§l№" + n));
+        e.setCustomNameVisible(true);
+    }
+
+    /** Моб говорит — номер над головой держится ещё 15 секунд. */
+    static void refreshTag(UUID id) {
+        Tag t = TAGS.get(id);
+        if (t != null) t.expires = System.currentTimeMillis() + TAG_MS;
+    }
+
+    private static void expireTags(MinecraftClient mc) {
+        if (TAGS.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        for (Map.Entry<UUID, Tag> en : TAGS.entrySet()) {
+            Tag t = en.getValue();
+            boolean gone = t.entity == null || t.entity.isRemoved();
+            if (!gone && t.expires > now) continue;
+            if (!gone) {
+                t.entity.setCustomName(t.oldName);
+                t.entity.setCustomNameVisible(t.oldVisible);
+            }
+            TAGS.remove(en.getKey());
+        }
     }
 
     private static String inventoryString(MinecraftClient mc) {
@@ -236,6 +341,7 @@ public class MobTalkClient implements ClientModInitializer {
     private static void spontaneousTick(MinecraftClient mc) {
         if (mc.world != lastWorld) { // новый мир: не здороваться со всеми сразу
             lastWorld = mc.world;
+            TAGS.clear();
             NEAR.clear();
             nearSeeded = false;
             prevDayTime = -1;

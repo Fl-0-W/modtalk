@@ -1,5 +1,6 @@
 {
   "key.mobtalk.talk": "Говорить с мобами (удерживать)",
   "key.mobtalk.rep": "Репутация и задания",
-  "category.mobtalk": "MobTalk"
+  "category.mobtalk": "MobTalk",
+  "key.mobtalk.window": "Окно репутации по расам"
 }

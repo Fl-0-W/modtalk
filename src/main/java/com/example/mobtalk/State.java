@@ -18,6 +18,20 @@ public class State {
     private static final Map<UUID, Integer> PERSONAL = new ConcurrentHashMap<>();
     private static final Map<String, Integer> SPECIES = new ConcurrentHashMap<>();
 
+    /** Запись журнала репутации: когда, у какой расы, на сколько и за что. */
+    public static class Entry {
+        public long real;          // реальное время (мс), для порядка
+        public long gameTime;      // игровое время (тики мира), для «День N, ЧЧ:ММ»
+        public String faction = "";
+        public String mob = "";    // кто именно (подпись моба), может быть пустым
+        public int personal;       // изменение личного отношения этого моба
+        public int factionDelta;   // изменение репутации расы
+        public String reason = "";
+    }
+
+    private static final int HISTORY_MAX = 500;
+    private static final List<Entry> HISTORY = new ArrayList<>();
+
     private static class Disk {
         List<String> truce = new ArrayList<>();
         List<String> follow = new ArrayList<>();
@@ -25,6 +39,7 @@ public class State {
         Map<String, Integer> personal = new HashMap<>();
         Map<String, Integer> species = new HashMap<>();
         int version = 0;
+        List<Entry> history = new ArrayList<>();
     }
 
     private static long lastDay = -1;
@@ -79,6 +94,16 @@ public class State {
         SPECIES.put(type, v);
         save();
         return v;
+    }
+
+    public static synchronized void addHistory(Entry e) {
+        HISTORY.add(e);
+        while (HISTORY.size() > HISTORY_MAX) HISTORY.remove(0);
+        save();
+    }
+
+    public static synchronized List<Entry> historySnapshot() {
+        return new ArrayList<>(HISTORY);
     }
 
     public static Map<String, Integer> speciesSnapshot() {
@@ -151,6 +176,7 @@ public class State {
             for (String s : d.follow) FOLLOW.add(UUID.fromString(s));
             d.voices.forEach((k, x) -> VOICES.put(UUID.fromString(k), x));
             d.personal.forEach((k, x) -> PERSONAL.put(UUID.fromString(k), x));
+            if (d.history != null) HISTORY.addAll(d.history);
             if (d.version < 2) { // старые записи были по видам, теперь — по фракциям: сливаем с ослаблением
                 for (Map.Entry<String, Integer> en : d.species.entrySet())
                     SPECIES.merge(Reputation.factionOf(en.getKey()), en.getValue() / 2,
@@ -172,6 +198,9 @@ public class State {
             PERSONAL.forEach((k, x) -> d.personal.put(k.toString(), x));
             d.species.putAll(SPECIES);
             d.version = 2;
+            synchronized (State.class) {
+                d.history.addAll(HISTORY);
+            }
             Files.writeString(file(), GSON.toJson(d));
         } catch (Exception e) {
             MobTalkClient.LOG.error("State save error", e);

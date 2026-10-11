@@ -35,9 +35,11 @@ public class Reputation {
 
     private static final Map<String, String> FACTION_OF = new HashMap<>();
     private static final Map<String, String> FACTION_NAME = new LinkedHashMap<>();
+    private static final Map<String, List<String>> FACTION_MEMBERS = new HashMap<>();
 
     private static void faction(String id, String name, String... types) {
         FACTION_NAME.put(id, name);
+        FACTION_MEMBERS.put(id, List.of(types));
         for (String t : types) FACTION_OF.put(t, id);
     }
 
@@ -59,6 +61,40 @@ public class Reputation {
     /** Фракция вида; у видов вне групп (крипер, странник Края…) фракция — сам вид. */
     public static String factionOf(String type) {
         return FACTION_OF.getOrDefault(type, type);
+    }
+
+    /** Виды, входящие в фракцию (у «одиночных» видов — он сам). */
+    public static List<String> membersOf(String factionId) {
+        List<String> m = FACTION_MEMBERS.get(factionId);
+        return m != null ? m : List.of(factionId);
+    }
+
+    /** Основные фракции в порядке показа. */
+    public static List<String> mainFactions() {
+        return new ArrayList<>(FACTION_NAME.keySet());
+    }
+
+    // ---------- журнал ----------
+
+    public static void record(String type, String mob, int personal, int factionDelta, String reason, long gameTime) {
+        if (personal == 0 && factionDelta == 0) return;
+        State.Entry e = new State.Entry();
+        e.real = System.currentTimeMillis();
+        e.gameTime = gameTime;
+        e.faction = factionOf(type);
+        e.mob = mob == null ? "" : mob;
+        e.personal = personal;
+        e.factionDelta = factionDelta;
+        e.reason = reason == null ? "" : reason;
+        State.addHistory(e);
+    }
+
+    /** «День 5, 14:20» из тиков мира (0 тиков = 6:00 утра). */
+    public static String gameClock(long t) {
+        long day = t / 24000L + 1;
+        long in = Math.floorMod(t, 24000L);
+        long h = (in / 1000L + 6) % 24, m = (in % 1000L) * 60 / 1000L;
+        return String.format("день %d, %02d:%02d", day, h, m);
     }
 
     public static String factionName(String factionId) {
@@ -90,6 +126,17 @@ public class Reputation {
         if (s < 40) return "Расположение";
         if (s < 70) return "Дружба";
         return "Преданность";
+    }
+
+    /** Что значит такая репутация расы для её представителей. */
+    public static String effectText(int rep) {
+        if (rep <= -70) return "Ненавидят вас: отказывают в сделках и услугах, враждебны.";
+        if (rep <= -40) return "Враждебны: торговцы завышают цены, помощи не ждите.";
+        if (rep <= -15) return "Не доверяют вам: холодны и подозрительны, цены завышены.";
+        if (rep < 15) return "Относятся нейтрально: присматриваются к вам.";
+        if (rep < 40) return "Расположены к вам: приветливее, небольшие скидки.";
+        if (rep < 70) return "Дружелюбны: говорят тепло, скидки до 25%.";
+        return "Преданы вам: доверяют секреты, скидки 30–50%.";
     }
 
     public static String color(int s) {
@@ -145,7 +192,8 @@ public class Reputation {
      * Применяет сдвиг отношения, который назвала модель после реплики игрока.
      * Возвращает null, если ничего не изменилось и сообщать нечего.
      */
-    public static TalkResult applyTalk(UUID id, String type, int raw, long day) {
+    public static TalkResult applyTalk(UUID id, String type, String label, int raw, String why, long gameTime) {
+        long day = gameTime / 24000L;
         int d = Math.max(-TALK_STEP_MAX, Math.min(TALK_STEP_MAX, raw));
         if (d == 0) return null;
         int cur = State.personal(id);
@@ -171,6 +219,9 @@ public class Reputation {
         State.addPersonal(id, d);
         int sd = d / 4; // слух разносится только после заметных поступков
         if (sd != 0) addFaction(type, sd);
+        String reason = why != null && !why.isBlank() ? why.trim()
+                : d > 0 ? "приятный разговор" : "неприятный разговор";
+        record(type, label, d, sd, reason, gameTime);
         return new TalkResult(d, attitude(id, type), capped);
     }
 
@@ -189,15 +240,18 @@ public class Reputation {
         String type = Registries.ENTITY_TYPE.getId(mob.getType()).getPath();
         boolean hostile = Personalities.isHostile(type, mob instanceof HostileEntity);
         String name = Personalities.displayName(mob);
+        long gt = mob.getWorld().getTimeOfDay();
 
         if (!hostile) {
             State.addPersonal(id, -25);
             int nf = addFaction(type, -6);
+            record(type, name, -25, -6, "удар по мирному существу", gt);
             p.sendMessage(Text.literal("§c[Вы ударили: " + name + ". Отношение −25 (" + tier(attitude(id, type))
                     + "). Слух разошёлся: " + factionName(factionOf(type)) + " " + fmt(nf) + "]"), false);
         } else if (wasTruce || State.personal(id) > 0) {
             State.addPersonal(id, -40);
             addFaction(type, -4);
+            record(type, name, -40, -4, "предательство: удар по тому, кто доверял", gt);
             p.sendMessage(Text.literal("§c[Предательство! " + name + " вам доверял: отношение −40 ("
                     + tier(attitude(id, type)) + ")]"), false);
         }
@@ -208,6 +262,7 @@ public class Reputation {
         boolean hostile = Personalities.isHostile(type, mob instanceof HostileEntity);
         if (hostile) return;
         int nf = addFaction(type, -12);
+        record(type, Personalities.displayName(mob), 0, -12, "убийство существа этой расы", mob.getWorld().getTimeOfDay());
         p.sendMessage(Text.literal("§c[Вы убили: " + Personalities.displayName(mob) + ". " + factionName(factionOf(type))
                 + " " + fmt(nf) + " (" + tier(nf) + ")]"), false);
     }
@@ -236,12 +291,14 @@ public class Reputation {
                 mc.player.getBoundingBox().expand(r), e -> e.isAlive() && e.distanceTo(mc.player) <= r);
         near.sort(Comparator.comparingDouble((MobEntity e) -> e.distanceTo(mc.player)));
         lines.add("§7Отношение мобов рядом:");
+        List<MobEntity> top = near.size() > 8 ? near.subList(0, 8) : near;
+        // одинаковые мобы нумеруются (№ совпадает с номером над головой, который высветится на 15 секунд)
+        Map<UUID, String> labels = MobTalkClient.labelAll(top, true);
         int shown = 0;
-        for (MobEntity e : near) {
-            if (shown >= 8) break;
+        for (MobEntity e : top) {
             String type = Registries.ENTITY_TYPE.getId(e.getType()).getPath();
             int v = attitude(e.getUuid(), type);
-            lines.add("  §e" + Personalities.displayName(e) + " " + bar(v) + " " + color(v) + fmt(v)
+            lines.add("  §e" + labels.get(e.getUuid()) + " " + bar(v) + " " + color(v) + fmt(v)
                     + " §7(" + tier(v) + ")");
             shown++;
         }

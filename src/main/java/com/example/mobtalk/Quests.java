@@ -231,6 +231,8 @@ public class Quests {
         }
         State.addPersonal(giver.getUuid(), 10);
         Reputation.addFaction(q.giverType, 3);
+        Reputation.record(q.giverType, q.giverName, 10, 3, "выполнено задание «" + q.title + "»",
+                giver.getWorld().getTimeOfDay());
         int after = Reputation.attitude(giver.getUuid(), q.giverType);
         if (p instanceof ServerPlayerEntity sp) {
             sp.sendMessage(Text.literal("§a[Задание «" + q.title + "» сдано] " + q.giverName

@@ -25,7 +25,7 @@ public class Brain {
 
     public record Scene(List<Mob> mobs, String inventory, String context, String playerName, UUID playerId) {}
 
-    record Reply(String say, List<JsonObject> actions, String raw, int rep) {}
+    record Reply(String say, List<JsonObject> actions, String raw, int rep, String why) {}
 
     private static final Set<UUID> COMPRESSING = ConcurrentHashMap.newKeySet();
 
@@ -51,7 +51,7 @@ public class Brain {
             if (!said.isEmpty()) u.append("\nУже ответили: ").append(String.join(" | ", said));
 
             Reply r = converse(mc, m, sc.playerName(), neighbors, sc.inventory(), sc.context(), u.toString(), true);
-            applyRep(mc, m, r.rep());
+            applyRep(mc, m, r.rep(), r.why());
             applyActions(mc, m, r);
             if (!r.say().isBlank()) {
                 any = true;
@@ -126,7 +126,7 @@ public class Brain {
         Memory.add(m.id(), "user", userContent);
         Memory.add(m.id(), "assistant", r.raw());
         maybeCompress(m);
-        if (!allowActions) return new Reply(r.say(), List.of(), r.raw(), 0);
+        if (!allowActions) return new Reply(r.say(), List.of(), r.raw(), 0, "");
 
         // сделка и поручение проверяются игрой ДО того, как моб произнесёт реплику
         String err = null;
@@ -153,7 +153,7 @@ public class Brain {
                 String t = type(a);
                 if (!"TRADE".equals(t) && !"QUEST".equals(t)) acts.add(a);
             }
-            return new Reply(r2.say(), acts, r2.raw(), r2.rep());
+            return new Reply(r2.say(), acts, r2.raw(), r2.rep(), r2.why());
         }
         return r;
     }
@@ -170,11 +170,12 @@ public class Brain {
                 if (o.has("actions") && o.get("actions").isJsonArray()) {
                     for (JsonElement e : o.getAsJsonArray("actions")) if (e.isJsonObject()) acts.add(e.getAsJsonObject());
                 }
-                return new Reply(say, acts, json, num(o, "rep"));
+                String why = o.has("why") && !o.get("why").isJsonNull() ? o.get("why").getAsString().trim() : "";
+                return new Reply(say, acts, json, num(o, "rep"), why);
             }
         } catch (Exception ignored) {
         }
-        return new Reply(s, List.of(), s, 0);
+        return new Reply(s, List.of(), s, 0, "");
     }
 
     private static JsonObject find(List<JsonObject> acts, String t) {
@@ -239,9 +240,9 @@ public class Brain {
 
     // ---------- репутация ----------
 
-    static void applyRep(MinecraftClient mc, Mob m, int rep) {
-        long day = mc.world != null ? mc.world.getTimeOfDay() / 24000L : 0L;
-        Reputation.TalkResult r = Reputation.applyTalk(m.id(), m.type(), rep, day);
+    static void applyRep(MinecraftClient mc, Mob m, int rep, String why) {
+        long gt = mc.world != null ? mc.world.getTimeOfDay() : 0L;
+        Reputation.TalkResult r = Reputation.applyTalk(m.id(), m.type(), m.name(), rep, why, gt);
         if (r == null) return;
         int after = r.attitude();
         if (r.delta() == 0) { // дневной лимит исчерпан: моб уже «наговорился» на сегодня
@@ -347,6 +348,7 @@ public class Brain {
     // ---------- реплика: чат + озвучка ----------
 
     static void say(MinecraftClient mc, Mob m, String text, double gain, String toName, boolean reportErr) {
+        MobTalkClient.refreshTag(m.id()); // номер над головой держится, пока моб говорит
         MobTalkClient.chat(mc, "§e" + m.name() + (toName != null ? "§7 → " + toName : "") + "§f: " + text);
 
         Config c = Config.INSTANCE;
