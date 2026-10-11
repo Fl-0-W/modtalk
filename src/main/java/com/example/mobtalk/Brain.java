@@ -389,8 +389,8 @@ public class Brain {
 
         CompletableFuture<byte[]> f = CompletableFuture.supplyAsync(() -> {
             try {
-                // повышение высоты через resample ускоряет речь, поэтому темп у Яндекса просим с поправкой
-                if (yandex) return Api.ttsYandex(text, voice, role, speed / Math.max(0.5, pitch));
+                // высоту и темп Яндекса обрабатывает Api.ttsYandex (встроенный pitchShift)
+                if (yandex) return Api.ttsYandex(text, voice, role, speed, pitch);
                 return Api.tts(text, voice, speed, instr);
             } catch (Exception e) {
                 MobTalkClient.LOG.warn("TTS error: {}", e.getMessage());
@@ -407,7 +407,7 @@ public class Brain {
             try {
                 byte[] pcm = f.get(90, TimeUnit.SECONDS);
                 if (pcm != null) {
-                    if (Math.abs(pitch - 1.0) > 0.01) pcm = Mic.resample(pcm, pitch);
+                    if (!yandex && Math.abs(pitch - 1.0) > 0.01) pcm = Mic.resample(pcm, pitch); // Яндекс сдвигает сам
                     Mic.play(pcm, g);
                 }
             } catch (Exception ignored) {

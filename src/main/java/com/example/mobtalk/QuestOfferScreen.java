@@ -19,7 +19,7 @@ public class QuestOfferScreen extends Screen {
     private List<OrderedText> lines = new ArrayList<>();
 
     public QuestOfferScreen(Quests.Quest quest, UUID giver) {
-        super(Text.literal("Поручение"));
+        super(Fonts.ui("Поручение"));
         this.quest = quest;
         this.giver = giver;
     }
@@ -29,18 +29,18 @@ public class QuestOfferScreen extends Screen {
         w = Math.min(width - 20, 320);
         int inner = w - 24;
         lines = new ArrayList<>();
-        lines.addAll(textRenderer.wrapLines(Text.literal("§7Предлагает: §f" + quest.giverName), inner));
-        lines.addAll(textRenderer.wrapLines(Text.literal("§7Задание: §f" + Quests.goal(quest)), inner));
-        lines.addAll(textRenderer.wrapLines(Text.literal("§7Награда: §a" + Quests.reward(quest)), inner));
-        lines.addAll(textRenderer.wrapLines(Text.literal("§8Принятые задания видны в окне заданий (N / Т)."), inner));
-        h = 44 + lines.size() * 11 + 34;
+        lines.addAll(Fonts.wrap(textRenderer, "§7Предлагает: §f" + quest.giverName, inner));
+        lines.addAll(Fonts.wrap(textRenderer, "§7Задание: §f" + Quests.goal(quest), inner));
+        lines.addAll(Fonts.wrap(textRenderer, "§7Награда: §a" + Quests.reward(quest), inner));
+        lines.addAll(Fonts.wrap(textRenderer, "§8Принятые задания видны в окне заданий (N / Т).", inner));
+        h = 44 + lines.size() * 12 + 34;
         x0 = (width - w) / 2;
         y0 = (height - h) / 2;
 
         int by = y0 + h - 28;
-        addDrawableChild(ButtonWidget.builder(Text.literal("§aПринять"), b -> decide(true))
+        addDrawableChild(ButtonWidget.builder(Fonts.ui("§aПринять"), b -> decide(true))
                 .dimensions(x0 + 12, by, (w - 32) / 2, 20).build());
-        addDrawableChild(ButtonWidget.builder(Text.literal("§cОтказаться"), b -> decide(false))
+        addDrawableChild(ButtonWidget.builder(Fonts.ui("§cОтказаться"), b -> decide(false))
                 .dimensions(x0 + 20 + (w - 32) / 2, by, (w - 32) / 2, 20).build());
     }
 
@@ -75,12 +75,12 @@ public class QuestOfferScreen extends Screen {
         renderBackground(ctx);
         ctx.fill(x0, y0, x0 + w, y0 + h, 0xE0101018);
         ctx.fill(x0, y0, x0 + w, y0 + 18, 0xFF202030);
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("Поручение: «" + quest.title + "»"),
+        ctx.drawCenteredTextWithShadow(textRenderer, Fonts.ui("Поручение: «" + quest.title + "»"),
                 x0 + w / 2, y0 + 5, 0xFFD060);
         int y = y0 + 26;
         for (OrderedText l : lines) {
             ctx.drawText(textRenderer, l, x0 + 12, y, 0xFFFFFF, false);
-            y += 11;
+            y += 12;
         }
         super.render(ctx, mouseX, mouseY, delta);
     }

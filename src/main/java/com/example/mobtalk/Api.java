@@ -119,11 +119,44 @@ public class Api {
     // ---------- Яндекс SpeechKit (API v3, REST) ----------
 
     private static byte[] ttsYandex(String text, String voice, double speed) throws Exception {
-        return ttsYandex(text, voice, "", speed);
+        return ttsYandex(text, voice, "", speed, 1.0);
     }
 
-    /** Озвучка Яндексом: voice + необязательное амплуа (role), speed — темп (1.0 — обычный). */
-    public static byte[] ttsYandex(String text, String voice, String role, double speed) throws Exception {
+    private static volatile boolean yandexPitchBroken;
+
+    /** Убирает из реплики то, что синтезатор читает странно: эмодзи, звёздочки, скобки, многоточия из точек. */
+    static String speechClean(String t) {
+        String s = t.replaceAll("[\\p{So}\\u200d\\ufe0f*_~`#<>\\[\\]{}|\\\\^]", " ");
+        s = s.replaceAll("\\.{3,}", "…").replaceAll("\\s+", " ").trim();
+        return s.isEmpty() ? t : s;
+    }
+
+    /**
+     * Озвучка Яндексом: voice + амплуа (role), tempo — темп (1.0 обычный), pitch — множитель высоты (1.0 обычный).
+     * Высота меняется встроенным hint pitchShift (естественнее); если он не принят, — мягкий локальный сдвиг ±6%.
+     */
+    public static byte[] ttsYandex(String text, String voice, String role, double tempo, double pitch) throws Exception {
+        Config c = Config.INSTANCE;
+        String clean = speechClean(text);
+        if (c.yandexNativePitch && !yandexPitchBroken && Math.abs(pitch - 1.0) > 0.01) {
+            try {
+                return ttsYandexRaw(clean, voice, role, tempo, (int) Math.round((pitch - 1.0) * 180.0));
+            } catch (RuntimeException e) {
+                String m = String.valueOf(e.getMessage()).toLowerCase();
+                if (m.startsWith("http 400") && (m.contains("pitch") || m.contains("hint"))) {
+                    yandexPitchBroken = true;
+                    MobTalkClient.LOG.warn("Yandex pitchShift not accepted, using soft local shift: {}", e.getMessage());
+                } else {
+                    throw e;
+                }
+            }
+        }
+        double pc = Math.max(0.94, Math.min(1.06, pitch));
+        byte[] pcm = ttsYandexRaw(clean, voice, role, tempo / pc, 0);
+        return Math.abs(pc - 1.0) > 0.01 ? Mic.resample(pcm, pc) : pcm;
+    }
+
+    private static byte[] ttsYandexRaw(String text, String voice, String role, double speed, int pitchHz) throws Exception {
         Config c = Config.INSTANCE;
         ByteArrayOutputStream pcm48 = new ByteArrayOutputStream();
         for (String part : splitText(text, 230)) { // лимит фразы в API v3 — около 250 символов
@@ -147,6 +180,11 @@ public class Api {
             JsonObject hs = new JsonObject();
             hs.addProperty("speed", Math.max(0.6, Math.min(1.6, speed)));
             hints.add(hs);
+            if (pitchHz != 0) {
+                JsonObject hp = new JsonObject();
+                hp.addProperty("pitchShift", pitchHz);
+                hints.add(hp);
+            }
             body.add("hints", hints);
             body.addProperty("loudnessNormalizationType", "LUFS");
 

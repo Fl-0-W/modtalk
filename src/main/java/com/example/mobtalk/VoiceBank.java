@@ -129,14 +129,19 @@ public final class VoiceBank {
         }
 
         double k = Math.max(0.0, c.voiceVariation);
-        double pitch = s.pitch() * (1.0 + s.spread() * k * unit(h >>> 20));
-        double speed = s.speed() * (1.0 + 0.07 * k * unit(h >>> 40));
-        if (baby) { // детёныши звонче и торопливее
-            pitch *= 1.18;
-            speed *= 1.08;
+        // Сильные сдвиги высоты и темпа делают речь «неживой», поэтому базу вида ослабляем вдвое:
+        // различие между видами строится в первую очередь на разных голосах и амплуа.
+        double basePitch = 1.0 + (s.pitch() - 1.0) * 0.5;
+        double baseSpeed = 1.0 + (s.speed() - 1.0) * 0.5;
+        double pitch = basePitch * (1.0 + s.spread() * 0.6 * k * unit(h >>> 20));
+        double speed = baseSpeed * (1.0 + 0.04 * k * unit(h >>> 40));
+        if (baby) { // детёныши чуть звонче
+            pitch *= 1.08;
+            speed *= 1.04;
         }
-        pitch = Math.max(0.65, Math.min(1.40, pitch));
-        speed = Math.max(0.60, Math.min(1.50, speed));
+        double m = Math.max(0.0, Math.min(0.3, c.maxPitchShift));
+        pitch = Math.max(1.0 - m, Math.min(1.0 + m, pitch));
+        speed = Math.max(0.85, Math.min(1.20, speed));
         return new Voice(voice, role, pitch, speed);
     }
 

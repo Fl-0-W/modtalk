@@ -21,7 +21,7 @@ import java.util.UUID;
 public class QuestScreen extends Screen {
     private static final int LEFT_W = 140;
     private static final int ROW_H = 26;
-    private static final int LINE_H = 10;
+    private static final int LINE_H = 11;
     private static final String[] DIRS = {"север", "северо-восток", "восток", "юго-восток", "юг", "юго-запад", "запад",
             "северо-запад"};
 
@@ -34,7 +34,7 @@ public class QuestScreen extends Screen {
     private ButtonWidget handInBtn, abandonBtn;
 
     public QuestScreen() {
-        super(Text.literal("Задания"));
+        super(Fonts.ui("Задания"));
     }
 
     @Override
@@ -49,9 +49,9 @@ public class QuestScreen extends Screen {
         int bx = x0 + LEFT_W + 10;
         int bw = (w - LEFT_W - 28) / 2;
         int by = y0 + h - 40;
-        handInBtn = addDrawableChild(ButtonWidget.builder(Text.literal("Сдать задание"), b -> handIn())
+        handInBtn = addDrawableChild(ButtonWidget.builder(Fonts.ui("Сдать задание"), b -> handIn())
                 .dimensions(bx, by, bw, 20).build());
-        abandonBtn = addDrawableChild(ButtonWidget.builder(Text.literal("Отказаться"), b -> abandon())
+        abandonBtn = addDrawableChild(ButtonWidget.builder(Fonts.ui("Отказаться"), b -> abandon())
                 .dimensions(bx + bw + 8, by, bw, 20).build());
     }
 
@@ -121,7 +121,7 @@ public class QuestScreen extends Screen {
     }
 
     private List<OrderedText> wrap(String s, int width) {
-        return textRenderer.wrapLines(Text.literal(s), width);
+        return Fonts.wrap(textRenderer, s, width);
     }
 
     @Override
@@ -129,7 +129,7 @@ public class QuestScreen extends Screen {
         renderBackground(ctx);
         ctx.fill(x0, y0, x0 + w, y0 + h, 0xD0101018);
         ctx.fill(x0, y0, x0 + w, y0 + 18, 0xFF202030);
-        ctx.drawCenteredTextWithShadow(textRenderer, Text.literal("Задания (" + quests.size() + ")"),
+        ctx.drawCenteredTextWithShadow(textRenderer, Fonts.ui("Задания (" + quests.size() + ")"),
                 x0 + w / 2, y0 + 5, 0xFFD060);
 
         int lt = y0 + 20, lh = h - 20 - 16;
@@ -140,16 +140,16 @@ public class QuestScreen extends Screen {
             int ry = lt + i * ROW_H - leftScroll;
             if (ry + ROW_H < lt || ry > lt + lh) continue;
             if (q.giver.equals(selected)) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x50FFFFFF);
-            ctx.drawText(textRenderer, textRenderer.trimToWidth("§e" + q.title, LEFT_W - 14), x0 + 8, ry + 3, 0xFFFFFF, false);
-            String sub = "§7" + q.giverName + (q.ready || q.progress >= q.need ? " §a✔" : " " + q.progress + "/" + q.need);
-            ctx.drawText(textRenderer, textRenderer.trimToWidth(sub, LEFT_W - 14), x0 + 8, ry + 14, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, "§e" + q.title, LEFT_W - 14), x0 + 8, ry + 3, 0xFFFFFF, false);
+            String sub = "§7" + q.giverName + (q.ready || q.progress >= q.need ? " §aготово" : " " + q.progress + "/" + q.need);
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, sub, LEFT_W - 14), x0 + 8, ry + 14, 0xFFFFFF, false);
         }
         ctx.disableScissor();
 
         Quests.Quest q = selected == null ? null : find(selected);
         int rx = x0 + LEFT_W + 10, rw = w - LEFT_W - 20;
         if (q == null) {
-            ctx.drawText(textRenderer, "§7Нет активных заданий.", rx, y0 + 26, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.ui("§7Нет активных заданий."), rx, y0 + 26, 0xFFFFFF, false);
             for (OrderedText l : wrap("§8Жители деревни сами предлагают поручения по своему ремеслу — "
                     + "поговорите с ними (клавиша V).", rw)) {
                 ctx.drawText(textRenderer, l, rx, y0 + 40, 0xFFFFFF, false);
@@ -176,10 +176,10 @@ public class QuestScreen extends Screen {
                 y += LINE_H;
             }
             handInBtn.active = "FETCH".equals(q.kind) ? have > 0 : q.ready;
-            abandonBtn.setMessage(Text.literal(confirmAbandon ? "§cТочно отказаться?" : "Отказаться"));
+            abandonBtn.setMessage(Fonts.ui(confirmAbandon ? "§cТочно отказаться?" : "Отказаться"));
         }
-        if (!status.isBlank()) ctx.drawText(textRenderer, textRenderer.trimToWidth(status, w - 16), x0 + 8, y0 + h - 12, 0xFFFFFF, false);
-        else ctx.drawText(textRenderer, "§8N / Esc — закрыть · колесо — прокрутка списка", x0 + 8, y0 + h - 12, 0xFFFFFF, false);
+        if (!status.isBlank()) ctx.drawText(textRenderer, Fonts.fit(textRenderer, status, w - 16), x0 + 8, y0 + h - 12, 0xFFFFFF, false);
+        else ctx.drawText(textRenderer, Fonts.ui("§8N / Esc — закрыть · колесо — прокрутка списка"), x0 + 8, y0 + h - 12, 0xFFFFFF, false);
         super.render(ctx, mouseX, mouseY, delta);
     }
 

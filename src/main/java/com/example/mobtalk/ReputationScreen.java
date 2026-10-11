@@ -17,7 +17,7 @@ import java.util.Map;
 public class ReputationScreen extends Screen {
     private static final int LEFT_W = 132;
     private static final int ROW_H = 24;
-    private static final int LINE_H = 10;
+    private static final int LINE_H = 11;
 
     private final List<String> factions = new ArrayList<>();
     private String selected;
@@ -29,7 +29,7 @@ public class ReputationScreen extends Screen {
     private List<OrderedText> hist = new ArrayList<>();
 
     public ReputationScreen() {
-        super(Text.literal("Репутация по расам"));
+        super(Fonts.ui("Репутация по расам"));
     }
 
     @Override
@@ -62,7 +62,7 @@ public class ReputationScreen extends Screen {
     }
 
     private List<OrderedText> wrap(String s, int width) {
-        return textRenderer.wrapLines(Text.literal(s), width);
+        return Fonts.wrap(textRenderer, s, width);
     }
 
     private int rightW() {
@@ -158,9 +158,8 @@ public class ReputationScreen extends Screen {
             if (f.equals(selected)) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x50FFFFFF);
             else if (mouseX >= x0 + 4 && mouseX < x0 + LEFT_W && mouseY >= ry && mouseY < ry + ROW_H - 2
                     && mouseY >= lt && mouseY < lt + lh) ctx.fill(x0 + 4, ry, x0 + LEFT_W, ry + ROW_H - 2, 0x25FFFFFF);
-            String name = textRenderer.trimToWidth(Reputation.factionName(f), LEFT_W - 14);
-            ctx.drawText(textRenderer, name, x0 + 8, ry + 3, 0xFFFFFF, false);
-            ctx.drawText(textRenderer, Reputation.color(rep) + Reputation.fmt(rep) + " §7" + Reputation.tier(rep),
+            ctx.drawText(textRenderer, Fonts.fit(textRenderer, Reputation.factionName(f), LEFT_W - 14), x0 + 8, ry + 3, 0xFFFFFF, false);
+            ctx.drawText(textRenderer, Fonts.ui(Reputation.color(rep) + Reputation.fmt(rep) + " §7" + Reputation.tier(rep)),
                     x0 + 8, ry + 13, 0xFFFFFF, false);
         }
         ctx.disableScissor();
@@ -188,7 +187,7 @@ public class ReputationScreen extends Screen {
             ctx.fill(x0 + w - 5, ty, x0 + w - 3, ty + thumb, 0xA0FFFFFF);
         }
 
-        ctx.drawText(textRenderer, "§8Отношение моба = личное + 40% репутации расы · колесо — прокрутка · P/Esc — закрыть",
+        ctx.drawText(textRenderer, Fonts.ui("§8Отношение моба = личное + 40% репутации расы · колесо — прокрутка · P/Esc — закрыть"),
                 x0 + 6, y0 + h - 12, 0xFFFFFF, false);
         super.render(ctx, mouseX, mouseY, delta);
     }
