@@ -15,7 +15,7 @@ import java.util.Map;
  * и журнал изменений репутации: когда, на сколько и за что.
  */
 public class ReputationScreen extends Screen {
-    private static final int LEFT_W = 132;
+    private static final int LEFT_W = 164;
     private static final int ROW_H = 30;
     private static final int LINE_H = 13;
 
@@ -34,7 +34,7 @@ public class ReputationScreen extends Screen {
 
     @Override
     protected void init() {
-        w = Math.min(width - 20, 460);
+        w = Math.min(width - 20, 520);
         h = Math.min(height - 20, 280);
         x0 = (width - w) / 2;
         y0 = (height - h) / 2;
@@ -74,7 +74,7 @@ public class ReputationScreen extends Screen {
         int rw = rightW();
         int rep = State.species(selected);
         head = new ArrayList<>();
-        head.addAll(wrap("§e§l" + Reputation.factionName(selected), rw));
+        head.addAll(wrap("§e" + Reputation.factionName(selected), rw));
 
         StringBuilder members = new StringBuilder();
         for (String t : Reputation.membersOf(selected)) {

@@ -19,7 +19,7 @@ import java.util.UUID;
  * прогресс и награда. Задание можно сдать прямо отсюда или лично, бросив предметы рядом с заказчиком.
  */
 public class QuestScreen extends Screen {
-    private static final int LEFT_W = 140;
+    private static final int LEFT_W = 164;
     private static final int ROW_H = 32;
     private static final int LINE_H = 13;
     private static final String[] DIRS = {"север", "северо-восток", "восток", "юго-восток", "юг", "юго-запад", "запад",
@@ -39,7 +39,7 @@ public class QuestScreen extends Screen {
 
     @Override
     protected void init() {
-        w = Math.min(width - 20, 460);
+        w = Math.min(width - 20, 520);
         h = Math.min(height - 20, 270);
         x0 = (width - w) / 2;
         y0 = (height - h) / 2;
@@ -150,15 +150,17 @@ public class QuestScreen extends Screen {
         int rx = x0 + LEFT_W + 10, rw = w - LEFT_W - 20;
         if (q == null) {
             ctx.drawText(textRenderer, Fonts.ui("§7Нет активных заданий."), rx, y0 + 26, 0xFFFFFF, false);
+            int ey = y0 + 40;
             for (OrderedText l : wrap("§8Жители деревни сами предлагают поручения по своему ремеслу — "
                     + "поговорите с ними (клавиша V).", rw)) {
-                ctx.drawText(textRenderer, l, rx, y0 + 40, 0xFFFFFF, false);
+                ctx.drawText(textRenderer, l, rx, ey, 0xFFFFFF, false);
+                ey += LINE_H;
             }
             handInBtn.active = false;
             abandonBtn.active = false;
         } else {
             List<OrderedText> info = new ArrayList<>();
-            info.addAll(wrap("§e§l" + q.title, rw));
+            info.addAll(wrap("§e" + q.title, rw));
             info.addAll(wrap("§7Заказчик: §f" + q.giverName, rw));
             info.addAll(wrap("§7Где: " + where(q), rw));
             info.addAll(wrap("§7Задание: §f" + Quests.goal(q), rw));

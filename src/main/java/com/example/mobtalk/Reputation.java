@@ -48,7 +48,7 @@ public class Reputation {
         faction("undead", "Нежить", "zombie", "husk", "drowned", "zombie_villager", "skeleton", "stray",
                 "wither_skeleton", "phantom");
         faction("illagers", "Разбойники и маги", "pillager", "vindicator", "evoker", "ravager", "vex", "witch");
-        faction("nether", "Обитатели Нижнего мира", "piglin", "zombified_piglin", "hoglin", "blaze", "ghast",
+        faction("nether", "Жители Незера", "piglin", "zombified_piglin", "hoglin", "blaze", "ghast",
                 "magma_cube", "strider");
         faction("spiders", "Пауки", "spider", "cave_spider");
         faction("farm", "Домашний скот", "cow", "mooshroom", "pig", "sheep", "chicken", "horse", "donkey", "llama",
