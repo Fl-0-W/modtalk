@@ -147,10 +147,27 @@ public class Deals {
         w.spawnEntity(ie);
         if (mob instanceof VillagerEntity) mob.playSound(SoundEvents.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
         if (paid) {
+            String type = Registries.ENTITY_TYPE.getId(mob.getType()).getPath();
+            int after = State.addPersonal(d.mob, 4); // честная сделка укрепляет доверие
+            State.addSpecies(type, 1);
             if (p instanceof ServerPlayerEntity sp)
-                sp.sendMessage(Text.literal("§a[Сделка] " + d.mobName + " выбросил вам: " + d.giveName), false);
+                sp.sendMessage(Text.literal("§a[Сделка] " + d.mobName + " выбросил вам: " + d.giveName
+                        + " §7(отношение +4 · " + Reputation.tier(after) + ")"), false);
             Memory.add(d.mob, "user", "[Система] Игрок бросил оплату, и ты выбросил ему товар. Сделка завершена.");
         }
+    }
+
+    /** Моб выбрасывает предмет в сторону игрока. */
+    public static void toss(MobEntity mob, ItemStack stack, PlayerEntity p) {
+        if (!(mob.getWorld() instanceof ServerWorld w)) return;
+        ItemEntity ie = new ItemEntity(w, mob.getX(), mob.getEyeY() - 0.3, mob.getZ(), stack);
+        Vec3d v = p != null
+                ? p.getPos().subtract(mob.getPos()).multiply(1, 0, 1).normalize().multiply(0.25)
+                : Vec3d.ZERO;
+        ie.setVelocity(v.x, 0.2, v.z);
+        ie.setPickupDelay(20);
+        w.spawnEntity(ie);
+        if (mob instanceof VillagerEntity) mob.playSound(SoundEvents.ENTITY_VILLAGER_YES, 1.0f, 1.0f);
     }
 
     private static MobEntity findMob(MinecraftServer srv, UUID id) {

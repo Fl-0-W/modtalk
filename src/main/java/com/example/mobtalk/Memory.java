@@ -9,7 +9,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.*;
 
-/** Память диалогов: у каждого моба (по UUID) своя история, хранится в config/mobtalk_memory_v2.json */
+/** Память мобов: недавние реплики + краткое резюме более старых разговоров. */
 public class Memory {
     public static class Msg {
         public String role;
@@ -23,37 +23,88 @@ public class Memory {
         }
     }
 
+    private static class Entry {
+        String summary = "";
+        List<Msg> msgs = new ArrayList<>();
+    }
+
     private static final Gson GSON = new GsonBuilder().setPrettyPrinting().create();
-    private static final Map<String, List<Msg>> DATA = new HashMap<>();
+    private static final Map<String, Entry> DATA = new HashMap<>();
 
     private static Path file() {
+        return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory_v3.json");
+    }
+
+    private static Path oldFile() {
         return FabricLoader.getInstance().getConfigDir().resolve("mobtalk_memory_v2.json");
     }
 
     public static synchronized void load() {
         try {
             Path p = file();
-            if (!Files.exists(p)) return;
-            Map<String, List<Msg>> read = GSON.fromJson(Files.readString(p),
-                    new TypeToken<Map<String, List<Msg>>>() {}.getType());
-            if (read != null) {
-                DATA.clear();
-                DATA.putAll(read);
+            if (Files.exists(p)) {
+                Map<String, Entry> read = GSON.fromJson(Files.readString(p),
+                        new TypeToken<Map<String, Entry>>() {}.getType());
+                if (read != null) {
+                    DATA.clear();
+                    DATA.putAll(read);
+                }
+            } else if (Files.exists(oldFile())) { // перенос старой памяти
+                Map<String, List<Msg>> old = GSON.fromJson(Files.readString(oldFile()),
+                        new TypeToken<Map<String, List<Msg>>>() {}.getType());
+                if (old != null) {
+                    old.forEach((k, v) -> {
+                        Entry e = new Entry();
+                        e.msgs = new ArrayList<>(v);
+                        DATA.put(k, e);
+                    });
+                    save();
+                }
             }
         } catch (Exception e) {
             MobTalkClient.LOG.error("Memory load error", e);
         }
     }
 
+    private static Entry entry(UUID id) {
+        Entry e = DATA.computeIfAbsent(id.toString(), k -> new Entry());
+        if (e.msgs == null) e.msgs = new ArrayList<>();
+        if (e.summary == null) e.summary = "";
+        return e;
+    }
+
     public static synchronized List<Msg> get(UUID id) {
-        return new ArrayList<>(DATA.getOrDefault(id.toString(), List.of()));
+        return new ArrayList<>(entry(id).msgs);
+    }
+
+    public static synchronized String summary(UUID id) {
+        Entry e = DATA.get(id.toString());
+        return e == null || e.summary == null ? "" : e.summary;
     }
 
     public static synchronized void add(UUID id, String role, String content) {
-        List<Msg> list = DATA.computeIfAbsent(id.toString(), k -> new ArrayList<>());
-        list.add(new Msg(role, content));
-        int max = Math.max(4, Config.INSTANCE.maxHistory);
-        while (list.size() > max) list.remove(0);
+        Entry e = entry(id);
+        e.msgs.add(new Msg(role, content));
+        int cap = Math.max(4, Config.INSTANCE.maxHistory) + 20; // страховка, если сжатие не сработало
+        while (e.msgs.size() > cap) e.msgs.remove(0);
+        save();
+    }
+
+    public static synchronized boolean needsCompression(UUID id) {
+        return entry(id).msgs.size() > Math.max(8, Config.INSTANCE.maxHistory);
+    }
+
+    /** Самые старые реплики, кроме последних keep штук. */
+    public static synchronized List<Msg> oldest(UUID id, int keep) {
+        List<Msg> m = entry(id).msgs;
+        int n = Math.max(0, m.size() - keep);
+        return new ArrayList<>(m.subList(0, n));
+    }
+
+    public static synchronized void applySummary(UUID id, String summary, int removeCount) {
+        Entry e = entry(id);
+        e.summary = summary;
+        for (int i = 0; i < removeCount && !e.msgs.isEmpty(); i++) e.msgs.remove(0);
         save();
     }
 

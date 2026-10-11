@@ -1,4 +1,5 @@
 {
-  "key.mobtalk.talk": "Talk to mob (hold)",
+  "key.mobtalk.talk": "Talk to mobs (hold)",
+  "key.mobtalk.rep": "Reputation and quests",
   "category.mobtalk": "MobTalk"
 }

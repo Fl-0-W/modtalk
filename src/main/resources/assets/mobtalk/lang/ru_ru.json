@@ -1,4 +1,5 @@
 {
-  "key.mobtalk.talk": "Говорить с мобом (удерживать)",
+  "key.mobtalk.talk": "Говорить с мобами (удерживать)",
+  "key.mobtalk.rep": "Репутация и задания",
   "category.mobtalk": "MobTalk"
 }

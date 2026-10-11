@@ -78,6 +78,26 @@ public class Mic {
         }
     }
 
+    /** Меняет высоту (и немного темп) голоса: factor > 1 — выше, < 1 — ниже. 16 бит, моно. */
+    public static byte[] resample(byte[] in, double factor) {
+        int n = in.length / 2;
+        if (n < 2 || factor <= 0) return in;
+        int m = (int) (n / factor);
+        byte[] out = new byte[m * 2];
+        for (int i = 0; i < m; i++) {
+            double pos = i * factor;
+            int i0 = (int) pos;
+            int i1 = Math.min(i0 + 1, n - 1);
+            double fr = pos - i0;
+            short a = (short) ((in[2 * i0] & 0xFF) | (in[2 * i0 + 1] << 8));
+            short b = (short) ((in[2 * i1] & 0xFF) | (in[2 * i1 + 1] << 8));
+            short v = (short) Math.round(a + (b - a) * fr);
+            out[2 * i] = (byte) v;
+            out[2 * i + 1] = (byte) (v >> 8);
+        }
+        return out;
+    }
+
     public static void play(byte[] pcm, float gain) {
         if (gain < 0.99f) {
             for (int i = 0; i + 1 < pcm.length; i += 2) {

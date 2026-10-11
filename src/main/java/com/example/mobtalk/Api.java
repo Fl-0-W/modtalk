@@ -4,8 +4,11 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.google.gson.stream.JsonReader;
+import com.google.gson.stream.JsonToken;
 
 import java.io.ByteArrayOutputStream;
+import java.io.StringReader;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -13,6 +16,7 @@ import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 
 /** Клиент OpenAI-совместимого API: распознавание речи, чат, озвучка. */
@@ -79,6 +83,7 @@ public class Api {
     /** Список голосов для текущего провайдера озвучки. */
     public static synchronized List<String> voiceList() {
         Config c = Config.INSTANCE;
+        if ("yandex".equalsIgnoreCase(c.ttsProvider)) return c.yandexVoices;
         if (!"elevenlabs".equalsIgnoreCase(c.ttsProvider)) return c.voices;
         if (!c.elevenVoices.isEmpty()) return c.elevenVoices;
         if (cachedEleven == null || cachedEleven.isEmpty()) cachedEleven = fetchElevenVoices();
@@ -109,6 +114,104 @@ public class Api {
             }
         }
         return new ArrayList<>();
+    }
+
+    // ---------- Яндекс SpeechKit (API v3, REST) ----------
+
+    private static byte[] ttsYandex(String text, String voice, double speed) throws Exception {
+        Config c = Config.INSTANCE;
+        ByteArrayOutputStream pcm48 = new ByteArrayOutputStream();
+        for (String part : splitText(text, 230)) { // лимит фразы в API v3 — около 250 символов
+            JsonObject body = new JsonObject();
+            body.addProperty("text", part);
+            JsonObject raw = new JsonObject();
+            raw.addProperty("audioEncoding", "LINEAR16_PCM");
+            raw.addProperty("sampleRateHertz", 48000);
+            JsonObject spec = new JsonObject();
+            spec.add("rawAudio", raw);
+            body.add("outputAudioSpec", spec);
+            JsonArray hints = new JsonArray();
+            JsonObject hv = new JsonObject();
+            hv.addProperty("voice", voice);
+            hints.add(hv);
+            JsonObject hs = new JsonObject();
+            hs.addProperty("speed", Math.max(0.85, Math.min(1.2, speed)));
+            hints.add(hs);
+            body.add("hints", hints);
+            body.addProperty("loudnessNormalizationType", "LUFS");
+
+            HttpRequest.Builder rb = HttpRequest.newBuilder(URI.create("https://tts.api.cloud.yandex.net/tts/v3/utteranceSynthesis"))
+                    .timeout(Duration.ofSeconds(60))
+                    .header("Authorization", "Api-Key " + c.yandexApiKey)
+                    .header("Content-Type", "application/json");
+            if (!c.yandexFolderId.isBlank()) rb.header("x-folder-id", c.yandexFolderId);
+            HttpRequest req = rb.POST(HttpRequest.BodyPublishers.ofString(body.toString(), StandardCharsets.UTF_8)).build();
+            HttpResponse<String> r = HTTP.send(req, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            check(r.statusCode(), r.body());
+
+            int before = pcm48.size();
+            try { // ответ — поток JSON-объектов с кусками аудио в base64
+                JsonReader reader = new JsonReader(new StringReader(r.body()));
+                reader.setLenient(true);
+                while (reader.peek() != JsonToken.END_DOCUMENT) {
+                    JsonElement el = JsonParser.parseReader(reader);
+                    if (!el.isJsonObject()) continue;
+                    JsonObject o = el.getAsJsonObject();
+                    if (o.has("result") && o.get("result").isJsonObject()) o = o.getAsJsonObject("result");
+                    if (o.has("audioChunk") && o.get("audioChunk").isJsonObject()) {
+                        JsonObject ch = o.getAsJsonObject("audioChunk");
+                        if (ch.has("data")) pcm48.write(Base64.getDecoder().decode(ch.get("data").getAsString()));
+                    }
+                }
+            } catch (Exception ignored) {
+            }
+            if (pcm48.size() == before) {
+                String b = r.body();
+                throw new RuntimeException("Яндекс вернул пустой ответ: " + (b.length() > 200 ? b.substring(0, 200) : b));
+            }
+        }
+        return downsample2(pcm48.toByteArray());
+    }
+
+    private static List<String> splitText(String text, int max) {
+        List<String> out = new ArrayList<>();
+        StringBuilder cur = new StringBuilder();
+        for (String sent : text.trim().split("(?<=[.!?…])\\s+")) {
+            String s = sent.trim();
+            while (s.length() > max) {
+                int cut = s.lastIndexOf(' ', max);
+                if (cut <= 0) cut = max;
+                if (cur.length() > 0) {
+                    out.add(cur.toString());
+                    cur.setLength(0);
+                }
+                out.add(s.substring(0, cut).trim());
+                s = s.substring(cut).trim();
+            }
+            if (s.isEmpty()) continue;
+            if (cur.length() > 0 && cur.length() + s.length() + 1 > max) {
+                out.add(cur.toString());
+                cur.setLength(0);
+            }
+            if (cur.length() > 0) cur.append(' ');
+            cur.append(s);
+        }
+        if (cur.length() > 0) out.add(cur.toString());
+        return out;
+    }
+
+    /** 48 кГц -> 24 кГц (16 бит, моно): усредняем пары отсчётов. */
+    private static byte[] downsample2(byte[] in) {
+        int n = in.length / 4;
+        byte[] out = new byte[n * 2];
+        for (int i = 0; i < n; i++) {
+            short a = (short) ((in[4 * i] & 0xFF) | (in[4 * i + 1] << 8));
+            short b = (short) ((in[4 * i + 2] & 0xFF) | (in[4 * i + 3] << 8));
+            short v = (short) ((a + b) / 2);
+            out[2 * i] = (byte) v;
+            out[2 * i + 1] = (byte) (v >> 8);
+        }
+        return out;
     }
 
     private static byte[] ttsEleven(String text, String voiceId, double speed) throws Exception {
@@ -143,6 +246,7 @@ public class Api {
     /** Возвращает сырой PCM 24 кГц, 16 бит, моно. */
     public static byte[] tts(String text, String voice, double speed, String instructions) throws Exception {
         Config c = Config.INSTANCE;
+        if ("yandex".equalsIgnoreCase(c.ttsProvider)) return ttsYandex(text, voice, speed);
         if ("elevenlabs".equalsIgnoreCase(c.ttsProvider)) return ttsEleven(text, voice, speed);
         JsonObject body = new JsonObject();
         body.addProperty("model", c.ttsModel);

@@ -32,13 +32,37 @@ public class Config {
     public double elevenStability = 0.4;
     public double elevenStyle = 0.35;
 
+    /** Яндекс SpeechKit (ttsProvider = "yandex"): русские голоса, в т.ч. премиум. */
+    public String yandexApiKey = "";
+    public String yandexFolderId = "";
+    public List<String> yandexVoices = new ArrayList<>(List.of(
+            "alexander", "marina", "kirill", "masha", "anton", "dasha", "filipp", "julia", "lera", "alena"));
+
     /** Список голосов для озвучки. Каждый моб получает свой голос из этого списка. */
     public List<String> voices = new ArrayList<>(DEFAULT_VOICES);
+
+    /**
+     * Варианты высоты голоса. Каждый голос из списка умножается на эти варианты:
+     * 3 голоса x 3 варианта = 9 разных на слух голосов.
+     */
+    public List<Double> pitchVariants = new ArrayList<>(List.of(1.0, 0.92, 1.08));
 
     /** Радиус, в котором мобы слышат игрока (блоков). */
     public double listenRadius = 10.0;
     /** Сколько ближайших мобов отвечают одновременно. */
     public int maxListeners = 3;
+
+    /** Долгая память: старые реплики сжимаются в краткое резюме. */
+    public boolean memorySummaries = true;
+
+    /** Мобы заговаривают первыми, когда вы подходите. */
+    public boolean greetings = true;
+    public double greetRadius = 5.0;
+    public double greetChance = 0.6;
+    public int greetCooldownSec = 240;
+
+    /** Мобы реагируют на события: ночь, дождь, гроза, рейд, урон игроку, гибель соседа. */
+    public boolean reactions = true;
 
     /** Редкие короткие разговоры мобов между собой. */
     public boolean ambientChatter = true;
@@ -81,6 +105,12 @@ public class Config {
             c.elevenApiKey = env != null ? env : "";
         }
         if (c.elevenVoices == null) c.elevenVoices = new ArrayList<>();
+        if (c.pitchVariants == null || c.pitchVariants.isEmpty()) c.pitchVariants = new ArrayList<>(List.of(1.0));
+        if (c.yandexApiKey == null) c.yandexApiKey = "";
+        if (c.yandexFolderId == null) c.yandexFolderId = "";
+        if (c.yandexVoices == null || c.yandexVoices.isEmpty())
+            c.yandexVoices = new ArrayList<>(List.of("alexander", "marina", "kirill", "masha", "anton", "dasha",
+                    "filipp", "julia", "lera", "alena"));
         if (c.baseUrl.endsWith("/")) c.baseUrl = c.baseUrl.substring(0, c.baseUrl.length() - 1);
         return c;
     }
