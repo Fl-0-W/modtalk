@@ -10,7 +10,7 @@ import net.minecraft.util.Language;
 import java.util.List;
 
 /**
- * Шрифт окон мода: растровый шрифт на основе Inter (SIL OFL) с кириллицей, лежит в assets/mobtalk/font.
+ * Шрифт окон мода: пиксельный шрифт Tiny5 (SIL OFL) с кириллицей, лежит в assets/mobtalk/font.
  * Цветовые коды «§» в строках работают как обычно. Отключается в config/mobtalk.json: "uiFont": false.
  */
 public final class Fonts {
